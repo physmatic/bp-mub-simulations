@@ -1,0 +1,21 @@
+# OS/editor files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.venv/
+venv/
+.env
+
+# Build/temporary files
+*.log
+*.tmp
+*.bak

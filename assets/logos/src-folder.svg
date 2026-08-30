@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Source folder icon">
+  <defs>
+    <linearGradient id="srcGrad" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 38c0-8.8 7.2-16 16-16h24l12 16h40c8.8 0 16 7.2 16 16v32c0 8.8-7.2 16-16 16H28c-8.8 0-16-7.2-16-16V38z" fill="url(#srcGrad)" opacity="0.95"/>
+  <rect x="28" y="58" width="72" height="18" rx="4" fill="#E0E7FF"/>
+  <rect x="28" y="82" width="52" height="12" rx="4" fill="#C7D2FE"/>
+  <path d="M42 26h14v12H42z" fill="#A5B4FC" opacity="0.9"/>
+</svg>
