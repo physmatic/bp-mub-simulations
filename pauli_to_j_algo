@@ -1,0 +1,277 @@
+import numpy as np
+import itertools
+
+# Single-qubit mapping: char -> (x, z)
+_PAULI_MAP = {
+    'I': (0, 0),
+    'X': (1, 0),
+    'Y': (1, 1),
+    'Z': (0, 1),
+}
+
+def pauli_to_xz(pauli, qiskit_string_order: bool = False):
+    """
+    Map an n-qubit Pauli operator to binary vectors x and z such that
+    P_k = i^(x_k * z_k) * X^(x_k) * Z^(z_k).
+
+    Parameters
+    ----------
+    pauli : str or qiskit.quantum_info.Pauli
+        Pauli string (e.g., 'IXYZ') or Qiskit Pauli object.
+    qiskit_string_order : bool, default=False
+        Only relevant if `pauli` is passed as a raw string.
+        If True, treats the string as Qiskit little-endian (rightmost char = qubit 0).
+        If False, treats index 0 of the string as qubit 0 (PennyLane / standard).
+
+    Returns
+    -------
+    x : np.ndarray of shape (n,), dtype=np.uint8
+    z : np.ndarray of shape (n,), dtype=np.uint8
+    """
+    # 1. Native Qiskit Pauli object
+    if hasattr(pauli, 'x') and hasattr(pauli, 'z'):
+        # Qiskit stores x and z boolean arrays where index 0 is qubit 0
+        return np.asarray(pauli.x, dtype=np.uint8), np.asarray(pauli.z, dtype=np.uint8)
+
+    # 2. String input
+    if isinstance(pauli, str):
+        pauli_str = pauli.strip().upper()
+        if qiskit_string_order:
+            # Reverse so that index 0 corresponds to qubit 0
+            pauli_str = pauli_str[::-1]
+
+        n = len(pauli_str)
+        x = np.empty(n, dtype=np.uint8)
+        z = np.empty(n, dtype=np.uint8)
+
+        for idx, char in enumerate(pauli_str):
+            if char not in _PAULI_MAP:
+                raise ValueError(f"Invalid Pauli character '{char}'. Expected one of I, X, Y, Z.")
+            x[idx], z[idx] = _PAULI_MAP[char]
+
+        return x, z
+
+    raise TypeError(f"Unsupported Pauli type: {type(pauli)}")
+
+import numpy as np
+
+IRREDUCIBLE_POLYS = {
+    1: 0b11,              # x + 1
+    2: 0b111,             # x^2 + x + 1
+    3: 0b1011,            # x^3 + x + 1
+    4: 0b10011,           # x^4 + x + 1
+    5: 0b100101,          # x^5 + x^2 + 1
+    6: 0b1000011,         # x^6 + x + 1
+    7: 0b10000011,        # x^7 + x + 1
+    8: 0b100011011,       # x^8 + x^4 + x^3 + x + 1
+    9: 0b1000000011,      # x^9 + x + 1
+    10: 0b10000001001,    # x^10 + x^3 + 1
+    11: 0b100000000101,   # x^11 + x^2 + 1
+    12: 0b1000001010011,  # x^12 + x^6 + x^4 + x + 1
+    13: 0b10000000011011, # x^13 + x^4 + x^3 + x + 1
+    14: 0b100010000000011,# x^14 + x^10 + x^6 + x + 1
+    15: 0b1000000000000011# x^15 + x + 1
+}
+
+
+def _gf2_multiply(a: int, b: int, poly: int, n: int) -> int:
+    """Multiplication in GF(2^n) modulo irreducible polynomial `poly`."""
+    res = 0
+    poly_rem = poly ^ (1 << n)  # reduction polynomial without x^n
+    for _ in range(n):
+        if b & 1:
+            res ^= a
+        b >>= 1
+        carry = a & (1 << (n - 1))
+        a = (a << 1) & ((1 << n) - 1)
+        if carry:
+            a ^= poly_rem
+    return res
+
+
+def compute_field_trace(beta: int, poly: int, n: int) -> int:
+    """
+    Computes Tr(beta) = sum_{m=0}^{n-1} beta^(2^m) in GF(2^n).
+    Returns 0 or 1.
+    """
+    trace_val = 0
+    curr = beta
+    for _ in range(n):
+        trace_val ^= curr
+        curr = _gf2_multiply(curr, curr, poly, n)  # Frobenius squaring
+    return trace_val & 1
+
+
+def get_precomputed_traces(n: int, poly: int) -> np.ndarray:
+    """
+    Precomputes field trace for alpha^m for m in [0, 3*n - 3].
+    Returns an array `traces` of length 3*n - 2.
+    """
+    max_power = 3 * n - 2
+    traces = np.empty(max_power, dtype=np.uint8)
+    curr = 1  # alpha^0 = 1
+    alpha = 2  # alpha^1 = x
+    for m in range(max_power):
+        traces[m] = compute_field_trace(curr, poly, n)
+        curr = _gf2_multiply(curr, alpha, poly, n)
+    return traces
+
+
+def build_M_tensors(n: int, poly: int) -> np.ndarray:
+    """
+    Constructs the 3D tensor M_tensor of shape (n, n, n), where:
+        M_tensor[k, s, t] = M^{(k)}_{s, t} = Tr(alpha^(s + t + k))
+    """
+    traces = get_precomputed_traces(n, poly)
+    M_tensor = np.empty((n, n, n), dtype=np.uint8)
+    for k in range(n):
+        for s in range(n):
+            for t in range(n):
+                M_tensor[k, s, t] = traces[s + t + k]
+    return M_tensor
+
+
+def solve_j(x: np.ndarray, z: np.ndarray, poly: int = None):
+    """
+    Solves for j such that:
+        z = sum_{k=0}^{n-1} j_k (M^{(k)} x)  (mod 2)
+
+    Returns
+    -------
+    j : int or float('inf')
+        Integer in [0, 2^n - 1] representing the basis index,
+        or float('inf') if x is the all-zero vector (computational basis).
+    """
+    x = np.asarray(x, dtype=np.uint8).flatten()
+    z = np.asarray(z, dtype=np.uint8).flatten()
+    n = len(x)
+
+    # 1. Check for x == 0 -> computational basis (j = infinity)
+    if not np.any(x):
+        return float('inf')
+
+    if poly is None:
+        if n not in IRREDUCIBLE_POLYS:
+            raise ValueError(f"No default irreducible polynomial defined for n={n}")
+        poly = IRREDUCIBLE_POLYS[n]
+
+    # 2. Build M tensors and form V = [v_0 | ... | v_{n-1}]
+    M_tensor = build_M_tensors(n, poly)
+    V = np.empty((n, n), dtype=np.uint8)
+    for k in range(n):
+        V[:, k] = (M_tensor[k] @ x) % 2
+
+    # 3. Gaussian elimination over GF(2)
+    aug = np.hstack([V.copy(), z[:, None]])
+    pivot_row = 0
+
+    for col in range(n):
+        rows_with_one = np.where(aug[pivot_row:, col] == 1)[0]
+        if len(rows_with_one) == 0:
+            continue
+        swap_idx = pivot_row + rows_with_one[0]
+        aug[[pivot_row, swap_idx]] = aug[[swap_idx, pivot_row]]
+
+        for r in range(n):
+            if r != pivot_row and aug[r, col] == 1:
+                aug[r] ^= aug[pivot_row]
+
+        pivot_row += 1
+        if pivot_row == n:
+            break
+
+    # Consistency check
+    for r in range(pivot_row, n):
+        if aug[r, n] != 0:
+            raise ValueError("No solution exists for j over F_2 (inconsistent system).")
+
+    # 4. Extract vector j_vec
+    j_vec = np.zeros(n, dtype=np.uint8)
+    for r in range(pivot_row - 1, -1, -1):
+        col = np.where(aug[r, :n] == 1)[0][0]
+        j_vec[col] = aug[r, n]
+
+    # 5. Convert binary vector j_vec to integer j in {0, ..., 2^n - 1}
+    # Little-endian convention: j_0 is 2^0, j_1 is 2^1, ...
+    j_int = int(sum(int(bit) << k for k, bit in enumerate(j_vec)))
+
+    return j_int
+
+import time
+import random
+import itertools
+import numpy as np
+
+# Irreducible polynomials up to n=20
+# Represented as binary bitmasks (degree n has bit n set)
+IRREDUCIBLE_POLYS = {
+    1: 0b11,
+    2: 0b111,
+    3: 0b1011,
+    4: 0b10011,
+    5: 0b100101,
+    6: 0b1000011,
+    7: 0b10000011,
+    8: 0b100011011,
+    9: 0b1000000011,
+    10: 0b10000001001,
+    11: 0b100000000101,
+    12: 0b1000001010011,
+    13: 0b10000000011011,
+    14: 0b100000000100001,
+    15: 0b1000000000000011,
+}
+
+def generate_all_paulis(n: int):
+    """
+    Generator for all 4^n Pauli strings.
+    Warning: only practical for n <= 7.
+    """
+    for p in itertools.product(["I", "X", "Y", "Z"], repeat=n):
+        yield "".join(p)
+
+def generate_random_pauli(n: int) -> str:
+    """Generates a single random Pauli string of length n."""
+    return "".join(random.choices(["I", "X", "Y", "Z"], k=n))
+
+def run_pauli_solver(n: int, num_samples: int = 10, print_results: bool = True):
+    """
+    Runs the solver for a given n. If 4^n <= num_samples, processes all operators;
+    otherwise, benchmarks on random samples.
+    """
+    if n not in IRREDUCIBLE_POLYS:
+        raise ValueError(f"Irreducible polynomial not defined for n={n}")
+    
+    total_operators = 4**n
+    exhaustive = total_operators <= num_samples
+
+    print(f"\n================ n = {n} (Total space: 4^{n} = {total_operators:,}) ================")
+    
+    if exhaustive:
+        pauli_stream = list(generate_all_paulis(n))
+        print(f"Exhaustive test over all {len(pauli_stream)} operators:")
+    else:
+        pauli_stream = [generate_random_pauli(n) for _ in range(num_samples)]
+        print(f"Sampling {num_samples} random operators:")
+
+    start_time = time.perf_counter()
+    results = []
+    
+    for p in pauli_stream:
+        x, z = pauli_to_xz(p)
+        j = solve_j(x, z, poly=IRREDUCIBLE_POLYS[n])
+        results.append((p, j))
+
+    elapsed = time.perf_counter() - start_time
+    avg_per_op_ms = (elapsed / len(pauli_stream)) * 1000
+
+    if print_results:
+        for p, j in results:
+            print(f"P = {p}  -->  j = {j}")
+
+    print(f"\nTiming: Total = {elapsed:.4f}s | Avg per operator = {avg_per_op_ms:.3f} ms")
+    
+run_pauli_solver(n=12,num_samples=100)
+run_pauli_solver(n=14,num_samples=100)
+# run_pauli_solver(n=9,num_samples=100)
+# run_pauli_solver(n=10,num_samples=100)
