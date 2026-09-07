@@ -85,7 +85,7 @@ def mub_circuit(n: int, j: int) -> QuantumCircuit:
     galois_matrices, p_powers = calculate_galois_matrices(n)
     a = calculate_a(j, galois_matrices, p_powers, n)
     b = calculate_b(j, galois_matrices, p_powers, n)
-    # print(f"a: {a}\n b: {b}")
+    print(f"a: {a}\n b: {b}")
     # S-part: apply S^a_t on qubit t
     for t in range(n):
         # a[t] == 0: do nothing
