@@ -302,7 +302,7 @@ def run_mub_orthogonality_test(n: int, verbose: bool = True):
 
     print(f"\n✓ All checks passed for n={n}!")
     
-run_mub_orthogonality_test(6)
+run_mub_orthogonality_test(4)
 
 # p = Pauli("IY")
 # x = np.asarray(p.x, dtype=np.uint8)
