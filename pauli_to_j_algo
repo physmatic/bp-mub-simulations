@@ -1,5 +1,16 @@
 import numpy as np
 import itertools
+from qiskit.quantum_info import Operator, Statevector
+
+try:
+    from src.MUB_Circuits_generator.mub_circuit import mub_circuit, compute_field_trace, _gf2_multiply
+    from src.MUB_Circuits_generator.consts import IRREDUCIBLE_POLYS
+except ImportError:
+    from .mub_circuit import mub_circuits
+    from .consts import IRREDUCBILE_POLYS
+
+from qiskit.quantum_info import Statevector, Pauli
+
 
 # Single-qubit mapping: char -> (x, z)
 _PAULI_MAP = {
@@ -9,7 +20,7 @@ _PAULI_MAP = {
     'Z': (0, 1),
 }
 
-def pauli_to_xz(pauli, qiskit_string_order: bool = False):
+def pauli_to_xz(pauli, qiskit_string_order: bool = True):
     """
     Map an n-qubit Pauli operator to binary vectors x and z such that
     P_k = i^(x_k * z_k) * X^(x_k) * Z^(z_k).
@@ -55,51 +66,7 @@ def pauli_to_xz(pauli, qiskit_string_order: bool = False):
 
 import numpy as np
 
-IRREDUCIBLE_POLYS = {
-    1: 0b11,              # x + 1
-    2: 0b111,             # x^2 + x + 1
-    3: 0b1011,            # x^3 + x + 1
-    4: 0b10011,           # x^4 + x + 1
-    5: 0b100101,          # x^5 + x^2 + 1
-    6: 0b1000011,         # x^6 + x + 1
-    7: 0b10000011,        # x^7 + x + 1
-    8: 0b100011011,       # x^8 + x^4 + x^3 + x + 1
-    9: 0b1000000011,      # x^9 + x + 1
-    10: 0b10000001001,    # x^10 + x^3 + 1
-    11: 0b100000000101,   # x^11 + x^2 + 1
-    12: 0b1000001010011,  # x^12 + x^6 + x^4 + x + 1
-    13: 0b10000000011011, # x^13 + x^4 + x^3 + x + 1
-    14: 0b100010000000011,# x^14 + x^10 + x^6 + x + 1
-    15: 0b1000000000000011# x^15 + x + 1
-}
 
-
-def _gf2_multiply(a: int, b: int, poly: int, n: int) -> int:
-    """Multiplication in GF(2^n) modulo irreducible polynomial `poly`."""
-    res = 0
-    poly_rem = poly ^ (1 << n)  # reduction polynomial without x^n
-    for _ in range(n):
-        if b & 1:
-            res ^= a
-        b >>= 1
-        carry = a & (1 << (n - 1))
-        a = (a << 1) & ((1 << n) - 1)
-        if carry:
-            a ^= poly_rem
-    return res
-
-
-def compute_field_trace(beta: int, poly: int, n: int) -> int:
-    """
-    Computes Tr(beta) = sum_{m=0}^{n-1} beta^(2^m) in GF(2^n).
-    Returns 0 or 1.
-    """
-    trace_val = 0
-    curr = beta
-    for _ in range(n):
-        trace_val ^= curr
-        curr = _gf2_multiply(curr, curr, poly, n)  # Frobenius squaring
-    return trace_val & 1
 
 
 def get_precomputed_traces(n: int, poly: int) -> np.ndarray:
@@ -202,25 +169,6 @@ import random
 import itertools
 import numpy as np
 
-# Irreducible polynomials up to n=20
-# Represented as binary bitmasks (degree n has bit n set)
-IRREDUCIBLE_POLYS = {
-    1: 0b11,
-    2: 0b111,
-    3: 0b1011,
-    4: 0b10011,
-    5: 0b100101,
-    6: 0b1000011,
-    7: 0b10000011,
-    8: 0b100011011,
-    9: 0b1000000011,
-    10: 0b10000001001,
-    11: 0b100000000101,
-    12: 0b1000001010011,
-    13: 0b10000000011011,
-    14: 0b100000000100001,
-    15: 0b1000000000000011,
-}
 
 def generate_all_paulis(n: int):
     """
@@ -275,3 +223,92 @@ run_pauli_solver(n=12,num_samples=100)
 run_pauli_solver(n=14,num_samples=100)
 # run_pauli_solver(n=9,num_samples=100)
 # run_pauli_solver(n=10,num_samples=100)
+
+
+def get_basis_states(circuit_or_matrix):
+    """
+    Returns a list of all 2^n statevectors |psi_i^(j)> = U_j |i>,
+    which are simply the columns of the unitary matrix U_j.
+    """
+    if hasattr(circuit_or_matrix, "num_qubits"):  # It's a QuantumCircuit
+        U_mat = Operator(circuit_or_matrix).data
+    else:  # It's already a numpy matrix
+        U_mat = np.asarray(circuit_or_matrix)
+
+    dim = U_mat.shape[1]
+    return [U_mat[:, i] for i in range(dim)]
+
+def pauli_string_to_matrix(p_str: str) -> np.ndarray:
+    """Converts a Pauli string like 'IXY' to its 2^n x 2^n matrix representation."""
+    matrices = {
+        'I': np.array([[1, 0], [0, 1]], dtype=complex),
+        'X': np.array([[0, 1], [1, 0]], dtype=complex),
+        'Y': np.array([[0, -1j], [1j, 0]], dtype=complex),
+        'Z': np.array([[1, 0], [0, -1]], dtype=complex),
+    }
+    mat = np.array([[1.0]], dtype=complex)
+    for char in p_str:
+        mat = np.kron(mat, matrices[char])
+    return mat
+
+def run_mub_orthogonality_test(n: int, verbose: bool = True):
+    poly = IRREDUCIBLE_POLYS[n]
+    all_j = list(range(2**n))
+
+    # Precompute all 2^n basis states for each basis j'
+    basis_states = {}
+    for j_prime in all_j:
+        qc = mub_circuit(n, j_prime)
+        basis_states[j_prime] = get_basis_states(qc)
+
+    all_paulis = [
+        "".join(p) for p in itertools.product(["I", "X", "Y", "Z"], repeat=n)
+        if set(p) != {'I'}
+    ]
+
+    print(f"Testing n={n}: {len(all_paulis)} non-identity Paulis across {len(all_j)} bases...\n")
+
+    for p_str in all_paulis:
+        x, z = pauli_to_xz(p_str)
+        expected_j = solve_j(x, z, poly=poly)
+        P_mat = pauli_string_to_matrix(p_str)
+
+        print(f"Pauli P = {p_str:<4} -> Assigned Basis j = {expected_j}")
+
+        for j_prime in all_j:
+            states = basis_states[j_prime]
+            vals = [np.vdot(psi, P_mat @ psi).real for psi in states]
+            vals_str = ", ".join(f"{v:+.2f}" for v in vals)
+
+            is_match = (j_prime == expected_j)
+            tag = "MATCH (±1)" if is_match else "OTHER (0) "
+
+            if verbose:
+                print(f"  [{tag}] Basis j'={str(j_prime):<4} | <P> over states: [{vals_str}]")
+
+            # Correctness checks
+            for i, val in enumerate(vals):
+                if is_match:
+                    if not (np.isclose(val, 1.0, atol=1e-5) or np.isclose(val, -1.0, atol=1e-5)):
+                        raise AssertionError(
+                            f"Mismatch at j'=j={expected_j}: P={p_str}, state={i}, <P>={val:.4f} (expected ±1)"
+                        )
+                else:
+                    if not np.isclose(val, 0.0, atol=1e-5):
+                        raise AssertionError(
+                            f"Leakage at j'={j_prime} != j={expected_j}: P={p_str}, state={i}, <P>={val:.4f} (expected 0)"
+                        )
+        print("-" * 60)
+
+    print(f"\n✓ All checks passed for n={n}!")
+    
+run_mub_orthogonality_test(6)
+
+# p = Pauli("IY")
+# x = np.asarray(p.x, dtype=np.uint8)
+# z = np.asarray(p.z, dtype=np.uint8)
+# P_mat = p.to_matrix()
+
+# print("Pauli 'IY' -> x:", x, "z:", z)
+# print("solve_j gives:", solve_j(x, z, poly=IRREDUCIBLE_POLYS[2]))
+
