@@ -1,8 +1,11 @@
-from typing import List, Tuple
+from typing import List, Tuple, Sequence, Optional
 import numpy as np
-from qiskit import QuantumCircuit
+import pennylane as qml
 
-from .consts import IRREDUCIBLE_POLYS
+try:
+    from .consts import IRREDUCIBLE_POLYS, QUBIT_NUM
+except ImportError:
+    from consts import IRREDUCIBLE_POLYS, QUBIT_NUM
 
 def to_base_p(x: int, p: int, n: int) -> np.ndarray:
     digits = []
@@ -147,33 +150,48 @@ def calculate_b(j, n: int, trace_table: np.ndarray) -> np.ndarray:
         b_arr[m] = int(val)
     return b_arr
 
-def mub_circuit(n: int, j: int) -> QuantumCircuit:
+def mub_circuit(n: int, j: int, wires: Optional[Sequence] = None) -> None:
     """
-    Build the MUB circuit U(j) for n qubits.
-    The circuit does H^⊗n, then S^a on each qubit, then CZ gates.
+    PennyLane quantum function for MUB generator U(j) on n qubits.
+    Applies H^⊗n, S^a on each wire, and CZ gates.
     """
-    qc = QuantumCircuit(n, name=f"MUB generator for j={j}")
+    if wires is None:
+        wires = list(range(n))
+    else:
+        wires = list(wires)
+        if len(wires) != n:
+            raise ValueError(f"Expected {n} wires, got {len(wires)}")
+
     # H-part: Hadamard on all qubits
     for q in range(n):
-        qc.h(q)
+        qml.Hadamard(wires=wires[q])
+
     # Compute S and CZ parameters for this j
-    galois_matrices, p_powers = calculate_galois_matrices(n)
     trace_table = get_trace_table(n)
     a = calculate_a(j, n, trace_table)
     b = calculate_b(j, n, trace_table)
-    # print(f"a: {a}\n b: {b}")
+
     # S-part: apply S^a_t on qubit t
     for t in range(n):
         # a[t] == 0: do nothing
         if a[t] == 1:
-            qc.s(t)
+            qml.S(wires=wires[t])
         elif a[t] == 2:
-            qc.z(t)
+            qml.PauliZ(wires=wires[t])
         elif a[t] == 3:
-            qc.sdg(t)
+            qml.adjoint(qml.S(wires=wires[t]))
+
     # CZ-part: apply CZ(s,t) where b[(s,t)] == 1
     for s in range(n):
         for t in range(s + 1, n):
             if b[s + t] == 1:
-                qc.cz(s, t)
-    return qc
+                qml.CZ(wires=[wires[s], wires[t]])
+
+
+def mub_unitary(n: int, j: int, wires: Optional[Sequence] = None) -> np.ndarray:
+    """
+    Compute the 2^n x 2^n unitary matrix of the MUB circuit U(j) in PennyLane.
+    """
+    if wires is None:
+        wires = list(range(n))
+    return qml.matrix(mub_circuit, wire_order=wires)(n, j, wires=wires)
