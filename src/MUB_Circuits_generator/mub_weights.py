@@ -122,6 +122,59 @@ def format_basis_name(j: Union[int, float]) -> str:
     return "∞" if (j == float('inf') or np.isinf(j)) else str(j)
 
 
+def count_active_stabilizer_sets(
+    H: Union[qml.Hamiltonian, qml.operation.Operator],
+    p_to_j_fn: Optional[Callable[[str], Union[int, float]]] = None,
+    wires: Optional[Sequence] = None
+) -> int:
+    """
+    Counts how many distinct active stabilizer sets (distinct j values)
+    the non-identity Pauli terms of the Hamiltonian are assigned to.
+
+    Parameters
+    ----------
+    H : qml.Hamiltonian or qml.operation.Operator
+        The target Hamiltonian.
+    p_to_j_fn : Callable, optional
+        Function mapping Pauli string to basis j. Defaults to pauli_to_j.p_to_j.
+    wires : Sequence, optional
+        Wire sequence. Defaults to sorted H.wires.
+
+    Returns
+    -------
+    int
+        Number of distinct active stabilizer basis indices j.
+    """
+    if p_to_j_fn is None:
+        try:
+            from .pauli_to_j import p_to_j
+        except ImportError:
+            from pauli_to_j import p_to_j
+        p_to_j_fn = p_to_j
+
+    weights = compute_mub_weights(H, p_to_j_fn, wires=wires)
+    return len(weights)
+
+
+def get_active_stabilizer_sets(
+    H: Union[qml.Hamiltonian, qml.operation.Operator],
+    p_to_j_fn: Optional[Callable[[str], Union[int, float]]] = None,
+    wires: Optional[Sequence] = None
+) -> Dict[Union[int, float], float]:
+    """
+    Returns the dictionary of active stabilizer sets and their normalized weights.
+    """
+    if p_to_j_fn is None:
+        try:
+            from .pauli_to_j import p_to_j
+        except ImportError:
+            from pauli_to_j import p_to_j
+        p_to_j_fn = p_to_j
+
+    return compute_mub_weights(H, p_to_j_fn, wires=wires)
+
+
+
 def test_toy_hamiltonian():
     """Unit test on a 2-qubit toy Hamiltonian: H = 0.5 Z_0 Z_1 - 0.3 X_1 + 1.2 X_0 X_1."""
     try:

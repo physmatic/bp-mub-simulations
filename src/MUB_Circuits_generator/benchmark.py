@@ -22,14 +22,14 @@ import matplotlib.pyplot as plt
 
 try:
     from .ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from .hamiltonians import build_tfim_hamiltonian
-    from .mub_weights import compute_mub_weights
+    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
+    from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from .pauli_to_j import p_to_j
     from .state_preparation import sample_mub_basis_and_state, prepare_mub_state
 except ImportError:
     from ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from hamiltonians import build_tfim_hamiltonian
-    from mub_weights import compute_mub_weights
+    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
+    from mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from pauli_to_j import p_to_j
     from state_preparation import sample_mub_basis_and_state, prepare_mub_state
 
@@ -53,6 +53,8 @@ def evaluate_single_param_shift(
 def run_variance_benchmark(
     qubits_list: Sequence[int] = (2, 3, 4, 5, 6),
     num_samples: int = 200,
+    hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "xy_dm",
+    layers_factor: int = 2,
     layers_fn: Optional[Callable[[int], int]] = None,
     param_idx: int = 0,
     seed: int = 42,
@@ -69,8 +71,13 @@ def run_variance_benchmark(
         List of qubit counts to benchmark, e.g. [2, 3, 4, 5, 6].
     num_samples : int
         Number of random initialization trials per qubit count.
+    hamiltonian_type : str or Callable, default="xy_dm"
+        Hamiltonian to benchmark: "xy_dm" (1D XY with DM interaction) or "tfim",
+        or a custom callable n -> qml.Hamiltonian.
+    layers_factor : int, default=2
+        Multiplier for ansatz depth: layers L = layers_factor * n.
     layers_fn : Callable[[int], int], optional
-        Function n -> layers. Default is lambda n: n (depth L = n).
+        Custom function n -> layers. Overrides layers_factor if provided.
     param_idx : int
         Parameter index k for which ∂_k C is evaluated. Default is 0.
     seed : int
@@ -83,14 +90,29 @@ def run_variance_benchmark(
     dict
         Benchmark results containing:
         - "qubits": list of n values
+        - "hamiltonian_name": name of Hamiltonian model
+        - "layers_factor": depth factor
         - "haar_var": list of Var_Haar[∂_k C]
         - "haar_mean": list of Mean_Haar[∂_k C]
         - "mub_var": list of Var_MUB[∂_k C]
         - "mub_mean": list of Mean_MUB[∂_k C]
-        - "samples": dict mapping n to detailed sample lists
+        - "details": dict mapping n to detailed sample lists and metadata
     """
     if layers_fn is None:
-        layers_fn = lambda n: n
+        layers_fn = lambda n: layers_factor * n
+
+    if isinstance(hamiltonian_type, str):
+        if hamiltonian_type.lower() in ["xy_dm", "xy", "dm"]:
+            ham_builder = lambda n, wires: build_xy_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
+            ham_name = "1D XY-DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0$)"
+        elif hamiltonian_type.lower() == "tfim":
+            ham_builder = lambda n, wires: build_tfim_hamiltonian(n, J=1.0, h=1.0, wires=wires)
+            ham_name = "1D TFIM Model ($J=1.0, h=1.0$)"
+        else:
+            raise ValueError(f"Unknown hamiltonian_type '{hamiltonian_type}'. Choose 'xy_dm' or 'tfim'.")
+    else:
+        ham_builder = hamiltonian_type
+        ham_name = getattr(hamiltonian_type, "__name__", "Custom Hamiltonian")
 
     rng = np.random.default_rng(seed)
 
@@ -98,19 +120,23 @@ def run_variance_benchmark(
         "qubits": list(qubits_list),
         "num_samples": num_samples,
         "param_idx": param_idx,
+        "hamiltonian_name": ham_name,
+        "layers_factor": layers_factor,
         "haar_var": [],
         "haar_mean": [],
         "mub_var": [],
         "mub_mean": [],
+        "active_stabilizer_counts": {},
         "details": {}
     }
 
     if verbose:
         print("=" * 80)
         print(f" COST DERIVATIVE VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
-        print(f" Samples per n: {num_samples} | Parameter index: {param_idx}")
+        print(f" Hamiltonian: {ham_name}")
+        print(f" Ansatz Depth: L = {layers_factor}n | Samples per n: {num_samples} | Param index: {param_idx}")
         print("=" * 80)
-        print(f"{'n':<4} | {'Layers':<6} | {'Params':<6} | {'Var[∂_k C] Haar':<18} | {'Var[∂_k C] MUB':<18} | {'Time (s)':<10}")
+        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active Sets':<11} | {'Var[∂_k C] Haar':<18} | {'Var[∂_k C] MUB':<18} | {'Time (s)':<8}")
         print("-" * 80)
 
     for n in qubits_list:
@@ -122,8 +148,10 @@ def run_variance_benchmark(
         if param_idx >= num_p:
             raise ValueError(f"param_idx={param_idx} exceeds total params {num_p} for n={n}, layers={layers}.")
 
-        H = build_tfim_hamiltonian(n, J=1.0, h=1.0, wires=wires)
+        H = ham_builder(n, wires)
         weights = compute_mub_weights(H, p_to_j, wires=wires)
+        active_count = len(weights)
+        results["active_stabilizer_counts"][n] = active_count
         dev = qml.device("default.qubit", wires=wires)
 
         # 1. Haar Initialization Trials
@@ -178,7 +206,7 @@ def run_variance_benchmark(
         }
 
         if verbose:
-            print(f"{n:<4} | {layers:<6} | {num_p:<6} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<10.2f}")
+            print(f"{n:<4} | {layers:<4} | {num_p:<6} | {active_count:<11} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<8.2f}")
 
     if verbose:
         print("=" * 80)
@@ -245,10 +273,15 @@ def plot_variance_benchmark(
     ax.set_yscale("log")
     ax.set_xlabel(r"Number of Qubits ($n$)", fontsize=13, fontweight="bold")
     ax.set_ylabel(r"Cost Derivative Variance $\mathrm{Var}[\partial_k C]$", fontsize=13, fontweight="bold")
+
+    ham_title = results.get("hamiltonian_name", "1D Model")
+    lf = results.get("layers_factor", 2)
+    p_idx = results.get("param_idx", 0)
+
     ax.set_title(
         f"VQE Cost Derivative Variance vs. System Size $n$\n"
-        f"1D TFIM ($J=1.0, h=1.0$), HEA Depth $L=n$, Parameter $\\partial_{{{results.get('param_idx', 0)}}} C$",
-        fontsize=13,
+        f"{ham_title}, HEA Depth $L={lf}n$, Parameter $\\partial_{{{p_idx}}} C$",
+        fontsize=12,
         pad=12
     )
 

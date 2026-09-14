@@ -37,6 +37,19 @@ def main():
         help="Number of initialization samples per qubit count (default: 200)"
     )
     parser.add_argument(
+        "-m", "--model",
+        type=str,
+        choices=["xy_dm", "tfim"],
+        default="xy_dm",
+        help="Hamiltonian model: 'xy_dm' (1D XY with DM interaction) or 'tfim' (default: xy_dm)"
+    )
+    parser.add_argument(
+        "-l", "--layers-factor",
+        type=int,
+        default=2,
+        help="Multiplier for ansatz depth: layers L = layers_factor * n (default: 2)"
+    )
+    parser.add_argument(
         "-p", "--param-idx",
         type=int,
         default=0,
@@ -66,6 +79,8 @@ def main():
     results = run_variance_benchmark(
         qubits_list=args.qubits,
         num_samples=args.samples,
+        hamiltonian_type=args.model,
+        layers_factor=args.layers_factor,
         param_idx=args.param_idx,
         seed=args.seed,
         verbose=True
@@ -83,15 +98,16 @@ def main():
     print(f"[OK] Numerical results saved to: {json_path}")
 
     # Print summary table
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 80)
     print(" SUMMARY TABLE: COST DERIVATIVE VARIANCE Var[∂_k C]")
-    print("=" * 65)
-    print(f"{'n':<4} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
-    print("-" * 65)
+    print("=" * 80)
+    print(f"{'n':<4} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
+    print("-" * 80)
     for n, h_var, m_var in zip(results["qubits"], results["haar_var"], results["mub_var"]):
+        act = results["active_stabilizer_counts"].get(n, "-")
         ratio = m_var / h_var if h_var > 0 else float("inf")
-        print(f"{n:<4} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
-    print("=" * 65)
+        print(f"{n:<4} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
+    print("=" * 80)
 
 
 if __name__ == "__main__":

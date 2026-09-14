@@ -1,8 +1,14 @@
 from .mub_circuit import mub_circuit, mub_unitary, QUBIT_NUM
 from .generate_mubs import generate_mubs, validate_orthogonality, validate_mubs
 from .pauli_to_j import pauli_to_xz, solve_j, p_to_j
-from .mub_weights import compute_mub_weights, op_to_pauli_str, format_basis_name
-from .hamiltonians import build_tfim_hamiltonian
+from .mub_weights import (
+    compute_mub_weights,
+    op_to_pauli_str,
+    format_basis_name,
+    count_active_stabilizer_sets,
+    get_active_stabilizer_sets,
+)
+from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
 from .state_preparation import (
     sample_mub_basis_and_state,
     prepare_mub_state,
@@ -29,7 +35,10 @@ __all__ = [
     "compute_mub_weights",
     "op_to_pauli_str",
     "format_basis_name",
+    "count_active_stabilizer_sets",
+    "get_active_stabilizer_sets",
     "build_tfim_hamiltonian",
+    "build_xy_dm_hamiltonian",
     "sample_mub_basis_and_state",
     "prepare_mub_state",
     "get_mub_statevector",
