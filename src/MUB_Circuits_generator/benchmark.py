@@ -448,9 +448,13 @@ def plot_variance_benchmark(
             pad=10
         )
 
-    # Ensure y-axis covers at least 10^-3 to 10^0
-    ymin, ymax = ax.get_ylim()
-    ax.set_ylim(bottom=min(1e-3, ymin), top=max(1.0, ymax))
+    # Restrict y-axis tightly around the data points with padding
+    all_vals = np.concatenate([haar_var, mub_var])
+    pos_vals = all_vals[all_vals > 0]
+    if len(pos_vals) > 0:
+        min_val = float(np.min(pos_vals))
+        max_val = float(np.max(pos_vals))
+        ax.set_ylim(bottom=min_val * 0.8, top=max_val * 1.25)
 
     ax.set_xticks(qubits)
     ax.grid(True, which="both", linestyle=":", alpha=0.6)
