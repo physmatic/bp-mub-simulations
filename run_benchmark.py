@@ -80,10 +80,26 @@ def main():
         default=42,
         help="Random seed (default: 42)"
     )
+    parser.add_argument(
+        "--diff-method",
+        type=str,
+        default="adjoint",
+        choices=["adjoint", "backprop"],
+        help="PennyLane differentiation method (default: adjoint)"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="PennyLane simulator device (default: auto, detects lightning.qubit)"
+    )
 
     args = parser.parse_args()
 
     param_val = int(args.param_idx) if args.param_idx.isdigit() else args.param_idx
+
+    import time
+    total_start_time = time.time()
 
     results = run_variance_benchmark(
         qubits_list=args.qubits,
@@ -91,6 +107,8 @@ def main():
         hamiltonian_type=args.model,
         layers_factor=args.layers_factor,
         metric=args.metric,
+        diff_method=args.diff_method,
+        device_name=args.device,
         param_idx=param_val,
         seed=args.seed,
         verbose=True
@@ -98,6 +116,7 @@ def main():
 
     # Save plot
     out_img = plot_variance_benchmark(results, output_path=args.output)
+    total_elapsed_time = time.time() - total_start_time
     print(f"\n[OK] Benchmark plot saved to: {out_img}")
 
     # Save JSON
@@ -132,6 +151,7 @@ def main():
         ratio = m_var / h_var if h_var > 0 else float("inf")
         print(f"{n:<4} | {mode_label:<12} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
     print("=" * 90)
+    print(f"\n[BENCHMARK FINISHED] Total time elapsed: {total_elapsed_time:.2f} seconds ({total_elapsed_time / 60:.2f} minutes).")
 
 
 if __name__ == "__main__":
