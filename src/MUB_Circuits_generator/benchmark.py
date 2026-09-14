@@ -56,7 +56,7 @@ def run_variance_benchmark(
     hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "xy_dm",
     layers_factor: int = 2,
     layers_fn: Optional[Callable[[int], int]] = None,
-    param_idx: int = 0,
+    param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
     seed: int = 42,
     verbose: bool = True
 ) -> Dict[str, Union[List[int], List[float], Dict]]:
@@ -78,8 +78,10 @@ def run_variance_benchmark(
         Multiplier for ansatz depth: layers L = layers_factor * n.
     layers_fn : Callable[[int], int], optional
         Custom function n -> layers. Overrides layers_factor if provided.
-    param_idx : int
-        Parameter index k for which ∂_k C is evaluated. Default is 0.
+    param_idx : int, str, or Callable, default="mid"
+        Parameter index k for which ∂_k C is evaluated.
+        Can be an int, 'mid' / 'middle' for (L // 2) * n + (n // 2),
+        or a callable (n, L) -> k.
     seed : int
         Random seed for reproducibility.
     verbose : bool
@@ -92,6 +94,8 @@ def run_variance_benchmark(
         - "qubits": list of n values
         - "hamiltonian_name": name of Hamiltonian model
         - "layers_factor": depth factor
+        - "param_idx_spec": specification passed for param_idx
+        - "evaluated_param_indices": dict mapping n to actual k evaluated
         - "haar_var": list of Var_Haar[∂_k C]
         - "haar_mean": list of Mean_Haar[∂_k C]
         - "mub_var": list of Var_MUB[∂_k C]
@@ -119,7 +123,8 @@ def run_variance_benchmark(
     results = {
         "qubits": list(qubits_list),
         "num_samples": num_samples,
-        "param_idx": param_idx,
+        "param_idx_spec": str(param_idx) if not callable(param_idx) else "callable",
+        "evaluated_param_indices": {},
         "hamiltonian_name": ham_name,
         "layers_factor": layers_factor,
         "haar_var": [],
@@ -134,9 +139,9 @@ def run_variance_benchmark(
         print("=" * 80)
         print(f" COST DERIVATIVE VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
         print(f" Hamiltonian: {ham_name}")
-        print(f" Ansatz Depth: L = {layers_factor}n | Samples per n: {num_samples} | Param index: {param_idx}")
+        print(f" Ansatz Depth: L = {layers_factor}n | Samples per n: {num_samples} | Param: {param_idx}")
         print("=" * 80)
-        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active Sets':<11} | {'Var[∂_k C] Haar':<18} | {'Var[∂_k C] MUB':<18} | {'Time (s)':<8}")
+        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'k_mid':<6} | {'Active':<7} | {'Var[∂_k C] Haar':<18} | {'Var[∂_k C] MUB':<18} | {'Time (s)':<8}")
         print("-" * 80)
 
     for n in qubits_list:
@@ -145,8 +150,20 @@ def run_variance_benchmark(
         num_p = get_num_hea_params(n, layers)
         wires = list(range(n))
 
-        if param_idx >= num_p:
-            raise ValueError(f"param_idx={param_idx} exceeds total params {num_p} for n={n}, layers={layers}.")
+        # Determine target parameter index k
+        if isinstance(param_idx, str) and param_idx.lower() in ["mid", "middle"]:
+            mid_layer = layers // 2
+            mid_wire = n // 2
+            actual_k = mid_layer * n + mid_wire
+        elif callable(param_idx):
+            actual_k = int(param_idx(n, layers))
+        else:
+            actual_k = int(param_idx)
+
+        if actual_k >= num_p or actual_k < 0:
+            raise ValueError(f"param_idx={actual_k} out of range [0, {num_p}) for n={n}, layers={layers}.")
+
+        results["evaluated_param_indices"][n] = actual_k
 
         H = ham_builder(n, wires)
         weights = compute_mub_weights(H, p_to_j, wires=wires)
@@ -162,9 +179,8 @@ def run_variance_benchmark(
 
         haar_grads = []
         for _ in range(num_samples):
-            # Sample theta ~ Uniform[0, 2π)^P
             theta = rng.uniform(0.0, 2.0 * np.pi, size=num_p)
-            grad_val = evaluate_single_param_shift(haar_circuit, theta, param_idx=param_idx)
+            grad_val = evaluate_single_param_shift(haar_circuit, theta, param_idx=actual_k)
             haar_grads.append(grad_val)
 
         haar_grads = np.array(haar_grads)
@@ -184,7 +200,7 @@ def run_variance_benchmark(
                 hardware_efficient_ansatz(p, wires=wires, layers=layers)
                 return qml.expval(H)
 
-            grad_val = evaluate_single_param_shift(mub_circuit, p0, param_idx=param_idx)
+            grad_val = evaluate_single_param_shift(mub_circuit, p0, param_idx=actual_k)
             mub_grads.append(grad_val)
 
         mub_grads = np.array(mub_grads)
@@ -200,13 +216,14 @@ def run_variance_benchmark(
         results["details"][n] = {
             "layers": layers,
             "num_params": num_p,
+            "param_k": actual_k,
             "haar_grads": haar_grads.tolist(),
             "mub_grads": mub_grads.tolist(),
             "runtime_sec": dt,
         }
 
         if verbose:
-            print(f"{n:<4} | {layers:<4} | {num_p:<6} | {active_count:<11} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<8.2f}")
+            print(f"{n:<4} | {layers:<4} | {num_p:<6} | {actual_k:<6} | {active_count:<7} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<8.2f}")
 
     if verbose:
         print("=" * 80)
@@ -276,13 +293,19 @@ def plot_variance_benchmark(
 
     ham_title = results.get("hamiltonian_name", "1D Model")
     lf = results.get("layers_factor", 2)
-    p_idx = results.get("param_idx", 0)
+    p_spec = str(results.get("param_idx_spec", "0"))
+
+    if p_spec.lower() in ["mid", "middle"]:
+        param_label = r"\partial_{\mathrm{mid}} C \ (\mathrm{Layer\ } n, \ \mathrm{Wire\ } \lfloor n/2 \rfloor)"
+    else:
+        param_label = rf"\partial_{{{p_spec}}} C"
 
     ax.set_title(
         f"VQE Cost Derivative Variance vs. System Size $n$\n"
-        f"{ham_title}, HEA Depth $L={lf}n$, Parameter $\\partial_{{{p_idx}}} C$",
-        fontsize=12,
-        pad=12
+        f"{ham_title}\n"
+        f"HEA Depth $L={lf}n$, Parameter ${param_label}$",
+        fontsize=11,
+        pad=10
     )
 
     ax.set_xticks(qubits)

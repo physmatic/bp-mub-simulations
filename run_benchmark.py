@@ -51,9 +51,9 @@ def main():
     )
     parser.add_argument(
         "-p", "--param-idx",
-        type=int,
-        default=0,
-        help="Ansatz parameter index k to evaluate ∂_k C for (default: 0)"
+        type=str,
+        default="mid",
+        help="Ansatz parameter index k or 'mid'/'middle' (default: mid)"
     )
     parser.add_argument(
         "-o", "--output",
@@ -76,12 +76,14 @@ def main():
 
     args = parser.parse_args()
 
+    param_val = int(args.param_idx) if args.param_idx.isdigit() else args.param_idx
+
     results = run_variance_benchmark(
         qubits_list=args.qubits,
         num_samples=args.samples,
         hamiltonian_type=args.model,
         layers_factor=args.layers_factor,
-        param_idx=args.param_idx,
+        param_idx=param_val,
         seed=args.seed,
         verbose=True
     )
@@ -98,16 +100,17 @@ def main():
     print(f"[OK] Numerical results saved to: {json_path}")
 
     # Print summary table
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     print(" SUMMARY TABLE: COST DERIVATIVE VARIANCE Var[∂_k C]")
-    print("=" * 80)
-    print(f"{'n':<4} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
-    print("-" * 80)
+    print("=" * 90)
+    print(f"{'n':<4} | {'Param k':<10} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
+    print("-" * 90)
     for n, h_var, m_var in zip(results["qubits"], results["haar_var"], results["mub_var"]):
+        k_eval = results["evaluated_param_indices"].get(n, "-")
         act = results["active_stabilizer_counts"].get(n, "-")
         ratio = m_var / h_var if h_var > 0 else float("inf")
-        print(f"{n:<4} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
-    print("=" * 80)
+        print(f"{n:<4} | {k_eval:<10} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
+    print("=" * 90)
 
 
 if __name__ == "__main__":
