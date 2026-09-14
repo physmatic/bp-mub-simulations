@@ -123,7 +123,7 @@ def run_variance_benchmark(
     if isinstance(hamiltonian_type, str):
         if hamiltonian_type.lower() in ["all_to_all_dm", "all_to_all", "dm_all"]:
             ham_builder = lambda n, wires: build_all_to_all_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
-            ham_name = "All-to-All DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0, 1/n$)"
+            ham_name = "All-to-All DM Model (Jx=1.0, Jy=0.5, D=0.8, h=1.0, 1/n)"
         elif hamiltonian_type.lower() in ["xy_dm", "xy", "dm"]:
             ham_builder = lambda n, wires: build_xy_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
             ham_name = "1D XY-DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0$)"
@@ -477,15 +477,14 @@ def plot_variance_benchmark(
         min_val = float(np.min(pos_vals))
         max_val = float(np.max(pos_vals))
         ax.set_ylim(bottom=min_val * 0.85, top=max_val * 1.20)
-
-    # Format y-axis ticks with legible scalar notation
-    from matplotlib.ticker import ScalarFormatter
-    ax.yaxis.set_major_formatter(ScalarFormatter())
-    ax.yaxis.set_minor_formatter(ScalarFormatter())
+        if max_val / min_val <= 10:
+            from matplotlib.ticker import ScalarFormatter
+            ax.yaxis.set_major_formatter(ScalarFormatter())
+            ax.yaxis.set_minor_formatter(ScalarFormatter())
 
     ax.set_xticks(qubits)
     ax.grid(True, which="both", linestyle=":", alpha=0.6)
-    ax.legend(fontsize=11, frameon=True, loc="lower left")
+    ax.legend(fontsize=11, frameon=True, loc="best")
 
     plt.tight_layout()
     fig.savefig(output_path)

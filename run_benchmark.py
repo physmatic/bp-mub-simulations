@@ -114,17 +114,18 @@ def main():
         verbose=True
     )
 
-    # Save plot
-    out_img = plot_variance_benchmark(results, output_path=args.output)
     total_elapsed_time = time.time() - total_start_time
-    print(f"\n[OK] Benchmark plot saved to: {out_img}")
 
     # Save JSON
     json_path = Path(args.json_output)
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
-    print(f"[OK] Numerical results saved to: {json_path}")
+    print(f"\n[OK] Numerical results saved to: {json_path}")
+
+    # Save plot
+    out_img = plot_variance_benchmark(results, output_path=args.output)
+    print(f"[OK] Benchmark plot saved to: {out_img}")
 
     # Print summary table
     metric_type = results.get("metric", "")
