@@ -68,6 +68,13 @@ def main():
         help="Path for saving numerical benchmark data (default: outputs/gradient_variance_benchmark.json)"
     )
     parser.add_argument(
+        "--metric",
+        type=str,
+        choices=["grad_norm_sq", "single_param"],
+        default="grad_norm_sq",
+        help="Benchmark metric: 'grad_norm_sq' (variance of ||∇C||^2) or 'single_param' (variance of ∂_k C) (default: grad_norm_sq)"
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -83,6 +90,7 @@ def main():
         num_samples=args.samples,
         hamiltonian_type=args.model,
         layers_factor=args.layers_factor,
+        metric=args.metric,
         param_idx=param_val,
         seed=args.seed,
         verbose=True
@@ -100,16 +108,18 @@ def main():
     print(f"[OK] Numerical results saved to: {json_path}")
 
     # Print summary table
+    is_norm_sq = results.get("metric", "") == "grad_norm_sq"
+    metric_label = "Var[||∇C||^2]" if is_norm_sq else "Var[∂_k C]"
     print("\n" + "=" * 90)
-    print(" SUMMARY TABLE: COST DERIVATIVE VARIANCE Var[∂_k C]")
+    print(f" SUMMARY TABLE: GRADIENT METRIC VARIANCE {metric_label}")
     print("=" * 90)
-    print(f"{'n':<4} | {'Param k':<10} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
+    print(f"{'n':<4} | {'Param / Mode':<12} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
     print("-" * 90)
     for n, h_var, m_var in zip(results["qubits"], results["haar_var"], results["mub_var"]):
-        k_eval = results["evaluated_param_indices"].get(n, "-")
+        mode_label = "||∇C||^2" if is_norm_sq else f"k={results['evaluated_param_indices'].get(n, '-')}"
         act = results["active_stabilizer_counts"].get(n, "-")
         ratio = m_var / h_var if h_var > 0 else float("inf")
-        print(f"{n:<4} | {k_eval:<10} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
+        print(f"{n:<4} | {mode_label:<12} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
     print("=" * 90)
 
 
