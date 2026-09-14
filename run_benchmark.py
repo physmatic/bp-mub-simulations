@@ -46,8 +46,8 @@ def main():
     parser.add_argument(
         "-l", "--layers-factor",
         type=int,
-        default=1,
-        help="Multiplier for ansatz depth: layers L = layers_factor * n (default: 1, i.e., L=n)"
+        default=2,
+        help="Multiplier for ansatz depth: layers L = layers_factor * n (default: 2, i.e., L=2n)"
     )
     parser.add_argument(
         "-p", "--param-idx",

@@ -54,7 +54,7 @@ def run_variance_benchmark(
     qubits_list: Sequence[int] = (3, 4, 5, 6, 7, 8),
     num_samples: int = 1000,
     hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "all_to_all_dm",
-    layers_factor: int = 1,
+    layers_factor: int = 2,
     layers_fn: Optional[Callable[[int], int]] = None,
     metric: str = "mean_param_var",
     param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
@@ -75,7 +75,7 @@ def run_variance_benchmark(
     hamiltonian_type : str or Callable, default="all_to_all_dm"
         Hamiltonian to benchmark: "all_to_all_dm", "xy_dm", or "tfim",
         or a custom callable n -> qml.Hamiltonian.
-    layers_factor : int, default=1
+    layers_factor : int, default=2
         Multiplier for ansatz depth: layers L = layers_factor * n.
     layers_fn : Callable[[int], int], optional
         Custom function n -> layers. Overrides layers_factor if provided.
@@ -113,7 +113,7 @@ def run_variance_benchmark(
     if isinstance(hamiltonian_type, str):
         if hamiltonian_type.lower() in ["all_to_all_dm", "all_to_all", "dm_all"]:
             ham_builder = lambda n, wires: build_all_to_all_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
-            ham_name = "All-to-All DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0, 1/\\sqrt{n}$)"
+            ham_name = "All-to-All DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0, 1/n$)"
         elif hamiltonian_type.lower() in ["xy_dm", "xy", "dm"]:
             ham_builder = lambda n, wires: build_xy_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
             ham_name = "1D XY-DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0$)"
@@ -448,13 +448,9 @@ def plot_variance_benchmark(
             pad=10
         )
 
-    # Restrict y-axis tightly around the data points with padding
-    all_vals = np.concatenate([haar_var, mub_var])
-    pos_vals = all_vals[all_vals > 0]
-    if len(pos_vals) > 0:
-        min_val = float(np.min(pos_vals))
-        max_val = float(np.max(pos_vals))
-        ax.set_ylim(bottom=min_val * 0.8, top=max_val * 1.25)
+    # Ensure y-axis covers at least 10^-2 to 10^0
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(bottom=min(1e-2, ymin), top=max(1.0, ymax))
 
     ax.set_xticks(qubits)
     ax.grid(True, which="both", linestyle=":", alpha=0.6)

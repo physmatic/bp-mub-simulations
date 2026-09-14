@@ -159,9 +159,9 @@ def build_all_to_all_dm_hamiltonian(
 ) -> qml.Hamiltonian:
     r"""
     Constructs the All-to-All Coupled Spin Model with Dzyaloshinskii-Moriya (DM)
-    interaction and Kac normalization (1/\sqrt{n}):
+    interaction and mean-field normalization (1/n):
 
-        H = -\frac{1}{\sqrt{n}} \sum_{0 \le i < j < n} \left( J_x X_i X_j + J_y Y_i Y_j + D(X_i Y_j - Y_i X_j) \right)
+        H = -\frac{1}{n} \sum_{0 \le i < j < n} \left( J_x X_i X_j + J_y Y_i Y_j + D(X_i Y_j - Y_i X_j) \right)
             - h \sum_{i=0}^{n-1} Z_i
 
     Parameters
@@ -182,11 +182,9 @@ def build_all_to_all_dm_hamiltonian(
     Returns
     -------
     qml.Hamiltonian
-        PennyLane Hamiltonian with all-to-all connectivity and Kac normalization.
+        PennyLane Hamiltonian with all-to-all connectivity and 1/n mean-field normalization.
         Contains 4 * n(n - 1) / 2 = 2n(n - 1) two-body terms and n single-body terms (total 2n^2 - n terms).
     """
-    import math
-
     if n < 1:
         raise ValueError(f"Number of qubits n must be at least 1, got {n}")
 
@@ -200,10 +198,10 @@ def build_all_to_all_dm_hamiltonian(
     coeffs: List[float] = []
     ops: List[qml.operation.Operator] = []
 
-    kac_factor = 1.0 / math.sqrt(n) if n > 0 else 1.0
-    scale_jx = Jx * kac_factor
-    scale_jy = Jy * kac_factor
-    scale_d = D * kac_factor
+    scale_factor = 1.0 / float(n) if n > 0 else 1.0
+    scale_jx = Jx * scale_factor
+    scale_jy = Jy * scale_factor
+    scale_d = D * scale_factor
 
     # All-to-all two-body interactions (0 <= i < j < n)
     if n > 1:
