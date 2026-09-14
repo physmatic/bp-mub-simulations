@@ -70,9 +70,9 @@ def main():
     parser.add_argument(
         "--metric",
         type=str,
-        choices=["grad_norm_sq", "single_param"],
-        default="grad_norm_sq",
-        help="Benchmark metric: 'grad_norm_sq' (variance of ||∇C||^2) or 'single_param' (variance of ∂_k C) (default: grad_norm_sq)"
+        choices=["mean_param_var", "grad_norm_sq", "single_param"],
+        default="mean_param_var",
+        help="Benchmark metric: 'mean_param_var' (Mean parameter variance (1/P) sum Var[∂_k C]), 'grad_norm_sq' (variance of ||∇C||^2), or 'single_param' (variance of ∂_k C) (default: mean_param_var)"
     )
     parser.add_argument(
         "--seed",
@@ -108,15 +108,26 @@ def main():
     print(f"[OK] Numerical results saved to: {json_path}")
 
     # Print summary table
-    is_norm_sq = results.get("metric", "") == "grad_norm_sq"
-    metric_label = "Var[||∇C||^2]" if is_norm_sq else "Var[∂_k C]"
+    metric_type = results.get("metric", "")
+    if metric_type == "mean_param_var":
+        metric_label = "(1/P) ∑ Var[∂_k C]"
+    elif metric_type == "grad_norm_sq":
+        metric_label = "Var[||∇C||^2]"
+    else:
+        metric_label = "Var[∂_k C]"
+
     print("\n" + "=" * 90)
     print(f" SUMMARY TABLE: GRADIENT METRIC VARIANCE {metric_label}")
     print("=" * 90)
     print(f"{'n':<4} | {'Param / Mode':<12} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
     print("-" * 90)
     for n, h_var, m_var in zip(results["qubits"], results["haar_var"], results["mub_var"]):
-        mode_label = "||∇C||^2" if is_norm_sq else f"k={results['evaluated_param_indices'].get(n, '-')}"
+        if metric_type == "mean_param_var":
+            mode_label = "Mean(P)"
+        elif metric_type == "grad_norm_sq":
+            mode_label = "||∇C||^2"
+        else:
+            mode_label = f"k={results['evaluated_param_indices'].get(n, '-')}"
         act = results["active_stabilizer_counts"].get(n, "-")
         ratio = m_var / h_var if h_var > 0 else float("inf")
         print(f"{n:<4} | {mode_label:<12} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")

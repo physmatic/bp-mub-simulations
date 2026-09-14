@@ -109,10 +109,27 @@ def test_mini_benchmark_grad_norm_sq():
     assert results["mub_var"][0] > 0.0
 
 
+def test_mini_benchmark_mean_param_var():
+    """Run a small benchmark sweep on n in [2, 3] with metric='mean_param_var'."""
+    results = run_variance_benchmark(
+        qubits_list=[2, 3],
+        num_samples=10,
+        metric="mean_param_var",
+        seed=42,
+        verbose=False
+    )
+    assert results["metric"] == "mean_param_var"
+    assert len(results["haar_var"]) == 2
+    assert len(results["mub_var"]) == 2
+    assert results["haar_var"][0] > 0.0
+    assert results["mub_var"][0] > 0.0
+
+
 if __name__ == "__main__":
     test_hea_param_count()
     test_hea_ansatz_execution()
     test_single_param_shift_exactness()
     test_mini_benchmark_and_plot()
     test_mini_benchmark_grad_norm_sq()
+    test_mini_benchmark_mean_param_var()
     print("All HEA ansatz and benchmark tests passed successfully!")

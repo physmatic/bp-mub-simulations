@@ -56,7 +56,7 @@ def run_variance_benchmark(
     hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "xy_dm",
     layers_factor: int = 2,
     layers_fn: Optional[Callable[[int], int]] = None,
-    metric: str = "grad_norm_sq",
+    metric: str = "mean_param_var",
     param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
     seed: int = 42,
     verbose: bool = True
@@ -79,8 +79,9 @@ def run_variance_benchmark(
         Multiplier for ansatz depth: layers L = layers_factor * n.
     layers_fn : Callable[[int], int], optional
         Custom function n -> layers. Overrides layers_factor if provided.
-    metric : str, default="grad_norm_sq"
+    metric : str, default="mean_param_var"
         Metric to evaluate:
+        - "mean_param_var" / "mean_var": Mean parameter variance (1/P) sum_{k} Var[∂_k C].
         - "grad_norm_sq" / "norm_sq": Variance of squared gradient norm Var[||∇C||^2].
         - "single_param": Variance of partial derivative Var[∂_k C] at param_idx.
     param_idx : int, str, or Callable, default="mid"
@@ -99,7 +100,7 @@ def run_variance_benchmark(
         - "qubits": list of n values
         - "hamiltonian_name": name of Hamiltonian model
         - "layers_factor": depth factor
-        - "metric": metric evaluated ("grad_norm_sq" or "single_param")
+        - "metric": metric evaluated
         - "haar_var": list of Var_Haar[metric]
         - "haar_mean": list of Mean_Haar[metric]
         - "mub_var": list of Var_MUB[metric]
@@ -122,13 +123,16 @@ def run_variance_benchmark(
         ham_builder = hamiltonian_type
         ham_name = getattr(hamiltonian_type, "__name__", "Custom Hamiltonian")
 
+    is_mean_var = metric.lower() in ["mean_param_var", "mean_var", "mean", "grad_mean_var", "default"]
     is_norm_sq = metric.lower() in ["grad_norm_sq", "norm_sq", "norm2", "grad_norm2"]
     rng = np.random.default_rng(seed)
+
+    actual_metric = "mean_param_var" if is_mean_var else ("grad_norm_sq" if is_norm_sq else "single_param")
 
     results = {
         "qubits": list(qubits_list),
         "num_samples": num_samples,
-        "metric": "grad_norm_sq" if is_norm_sq else "single_param",
+        "metric": actual_metric,
         "param_idx_spec": str(param_idx) if not callable(param_idx) else "callable",
         "evaluated_param_indices": {},
         "hamiltonian_name": ham_name,
@@ -141,17 +145,27 @@ def run_variance_benchmark(
         "details": {}
     }
 
-    metric_name = "Var[||∇C||^2]" if is_norm_sq else f"Var[∂_k C] ({param_idx})"
+    if is_mean_var:
+        metric_name = "(1/P) sum Var[∂_k C]"
+        col_header = "Mean Var Haar"
+        col_header_mub = "Mean Var MUB"
+    elif is_norm_sq:
+        metric_name = "Var[||∇C||^2]"
+        col_header = "Var[||∇C||^2] Haar"
+        col_header_mub = "Var[||∇C||^2] MUB"
+    else:
+        metric_name = f"Var[∂_k C] ({param_idx})"
+        col_header = "Var[∂_k C] Haar"
+        col_header_mub = "Var[∂_k C] MUB"
 
     if verbose:
-        print("=" * 80)
+        print("=" * 85)
         print(f" COST GRADIENT VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
         print(f" Hamiltonian: {ham_name}")
         print(f" Ansatz Depth: L = {layers_factor}n | Metric: {metric_name} | Samples: {num_samples}")
-        print("=" * 80)
-        col_header = "Var[||∇C||^2]" if is_norm_sq else "Var[∂_k C]"
-        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header + ' Haar':<18} | {col_header + ' MUB':<18} | {'Time (s)':<8}")
-        print("-" * 80)
+        print("=" * 85)
+        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header:<18} | {col_header_mub:<18} | {'Time (s)':<8}")
+        print("-" * 85)
 
     for n in qubits_list:
         t0 = time.time()
@@ -159,30 +173,60 @@ def run_variance_benchmark(
         num_p = get_num_hea_params(n, layers)
         wires = list(range(n))
 
-        if is_norm_sq:
-            actual_k = None
-        else:
-            if isinstance(param_idx, str) and param_idx.lower() in ["mid", "middle"]:
-                mid_layer = layers // 2
-                mid_wire = n // 2
-                actual_k = mid_layer * n + mid_wire
-            elif callable(param_idx):
-                actual_k = int(param_idx(n, layers))
-            else:
-                actual_k = int(param_idx)
-
-            if actual_k >= num_p or actual_k < 0:
-                raise ValueError(f"param_idx={actual_k} out of range [0, {num_p}) for n={n}, layers={layers}.")
-            results["evaluated_param_indices"][n] = actual_k
-
         H = ham_builder(n, wires)
         weights = compute_mub_weights(H, p_to_j, wires=wires)
         active_count = len(weights)
         results["active_stabilizer_counts"][n] = active_count
         dev = qml.device("default.qubit", wires=wires)
 
-        if is_norm_sq:
-            # 1. Haar Initialization - Full gradient backprop
+        if is_mean_var:
+            # 1. Haar Initialization: evaluate full gradient vectors
+            @qml.qnode(dev, diff_method="backprop")
+            def haar_circuit(p):
+                hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                return qml.expval(H)
+
+            grad_haar_fn = qml.grad(haar_circuit)
+            haar_grads = []
+            for _ in range(num_samples):
+                theta = qml.numpy.array(rng.uniform(0.0, 2.0 * np.pi, size=num_p), requires_grad=True)
+                g = grad_haar_fn(theta)
+                haar_grads.append(np.array(g, dtype=float))
+
+            haar_grads = np.array(haar_grads)  # shape (num_samples, num_p)
+            haar_param_vars = np.var(haar_grads, axis=0, ddof=1)  # shape (num_p,)
+            h_var = float(np.mean(haar_param_vars))
+            h_mean = float(np.mean(haar_grads))
+
+            # 2. MUB Initialization: evaluate full gradient vectors
+            p0 = qml.numpy.zeros(num_p, requires_grad=True)
+            mub_grads = []
+            for _ in range(num_samples):
+                j, k = sample_mub_basis_and_state(weights, n, rng=rng)
+
+                @qml.qnode(dev, diff_method="backprop")
+                def mub_circuit(p, _j=j, _k=k):
+                    prepare_mub_state(n, _j, _k, wires=wires)
+                    hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                    return qml.expval(H)
+
+                g = qml.grad(mub_circuit)(p0)
+                mub_grads.append(np.array(g, dtype=float))
+
+            mub_grads = np.array(mub_grads)  # shape (num_samples, num_p)
+            mub_param_vars = np.var(mub_grads, axis=0, ddof=1)  # shape (num_p,)
+            m_var = float(np.mean(mub_param_vars))
+            m_mean = float(np.mean(mub_grads))
+
+            details_entry = {
+                "layers": layers,
+                "num_params": num_p,
+                "haar_param_vars": haar_param_vars.tolist(),
+                "mub_param_vars": mub_param_vars.tolist(),
+            }
+
+        elif is_norm_sq:
+            # 1. Haar Initialization - Full gradient norm squared
             @qml.qnode(dev, diff_method="backprop")
             def haar_circuit(p):
                 hardware_efficient_ansatz(p, wires=wires, layers=layers)
@@ -199,7 +243,7 @@ def run_variance_benchmark(
             h_var = float(np.var(haar_vals, ddof=1))
             h_mean = float(np.mean(haar_vals))
 
-            # 2. MUB Initialization - Full gradient backprop
+            # 2. MUB Initialization - Full gradient norm squared
             p0 = qml.numpy.zeros(num_p, requires_grad=True)
             mub_vals = []
             for _ in range(num_samples):
@@ -218,8 +262,28 @@ def run_variance_benchmark(
             m_var = float(np.var(mub_vals, ddof=1))
             m_mean = float(np.mean(mub_vals))
 
+            details_entry = {
+                "layers": layers,
+                "num_params": num_p,
+                "haar_vals": haar_vals.tolist(),
+                "mub_vals": mub_vals.tolist(),
+            }
+
         else:
             # Single parameter shift
+            if isinstance(param_idx, str) and param_idx.lower() in ["mid", "middle"]:
+                mid_layer = layers // 2
+                mid_wire = n // 2
+                actual_k = mid_layer * n + mid_wire
+            elif callable(param_idx):
+                actual_k = int(param_idx(n, layers))
+            else:
+                actual_k = int(param_idx)
+
+            if actual_k >= num_p or actual_k < 0:
+                raise ValueError(f"param_idx={actual_k} out of range [0, {num_p}) for n={n}, layers={layers}.")
+            results["evaluated_param_indices"][n] = actual_k
+
             @qml.qnode(dev)
             def haar_circuit(p):
                 hardware_efficient_ansatz(p, wires=wires, layers=layers)
@@ -253,26 +317,30 @@ def run_variance_benchmark(
             m_var = float(np.var(mub_vals, ddof=1))
             m_mean = float(np.mean(mub_vals))
 
+            details_entry = {
+                "layers": layers,
+                "num_params": num_p,
+                "param_k": actual_k,
+                "haar_vals": haar_vals.tolist(),
+                "mub_vals": mub_vals.tolist(),
+            }
+
         dt = time.time() - t0
 
         results["haar_var"].append(h_var)
         results["haar_mean"].append(h_mean)
         results["mub_var"].append(m_var)
         results["mub_mean"].append(m_mean)
-        results["details"][n] = {
-            "layers": layers,
-            "num_params": num_p,
-            "param_k": actual_k,
-            "haar_vals": haar_vals.tolist(),
-            "mub_vals": mub_vals.tolist(),
-            "runtime_sec": dt,
-        }
+        details_entry["runtime_sec"] = dt
+        results["details"][n] = details_entry
 
         if verbose:
             print(f"{n:<4} | {layers:<4} | {num_p:<6} | {active_count:<7} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<8.2f}")
 
     if verbose:
-        print("=" * 80)
+        print("=" * 85)
+
+    return results
 
     return results
 
@@ -333,6 +401,7 @@ def plot_variance_benchmark(
         zorder=3
     )
 
+    is_mean_var = results.get("metric", "") == "mean_param_var"
     is_norm_sq = results.get("metric", "") == "grad_norm_sq"
     ham_title = results.get("hamiltonian_name", "1D Model")
     lf = results.get("layers_factor", 2)
@@ -340,7 +409,16 @@ def plot_variance_benchmark(
     ax.set_yscale("log")
     ax.set_xlabel(r"Number of Qubits ($n$)", fontsize=13, fontweight="bold")
 
-    if is_norm_sq:
+    if is_mean_var:
+        ax.set_ylabel(r"Mean Cost Derivative Variance $(1/P) \sum \mathrm{Var}[\partial_k C]$", fontsize=12, fontweight="bold")
+        ax.set_title(
+            f"VQE Mean Cost Derivative Variance vs. System Size $n$\n"
+            f"{ham_title}\n"
+            f"HEA Depth $L={lf}n$, $(1/P) \\sum \\mathrm{{Var}}[\\partial_k C]$ ($N={results.get('num_samples', 200)}$ samples)",
+            fontsize=11,
+            pad=10
+        )
+    elif is_norm_sq:
         ax.set_ylabel(r"Gradient Norm Squared Variance $\mathrm{Var}\left[\|\nabla C\|^2\right]$", fontsize=12, fontweight="bold")
         ax.set_title(
             f"VQE Squared Gradient Norm Variance vs. System Size $n$\n"
