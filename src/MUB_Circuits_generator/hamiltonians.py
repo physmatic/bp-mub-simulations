@@ -148,3 +148,95 @@ def build_xy_dm_hamiltonian(
 
     return qml.Hamiltonian(coeffs, ops)
 
+
+def build_all_to_all_dm_hamiltonian(
+    n: int,
+    Jx: float = 1.0,
+    Jy: float = 0.5,
+    D: float = 0.8,
+    h: float = 1.0,
+    wires: Optional[Sequence] = None
+) -> qml.Hamiltonian:
+    r"""
+    Constructs the All-to-All Coupled Spin Model with Dzyaloshinskii-Moriya (DM)
+    interaction and Kac normalization (1/\sqrt{n}):
+
+        H = -\frac{1}{\sqrt{n}} \sum_{0 \le i < j < n} \left( J_x X_i X_j + J_y Y_i Y_j + D(X_i Y_j - Y_i X_j) \right)
+            - h \sum_{i=0}^{n-1} Z_i
+
+    Parameters
+    ----------
+    n : int
+        Number of qubits. Must be >= 1.
+    Jx : float, default=1.0
+        Base coupling constant for XX interactions.
+    Jy : float, default=0.5
+        Base coupling constant for YY interactions.
+    D : float, default=0.8
+        Strength of the DM antisymmetric cross-term interaction.
+    h : float, default=1.0
+        Strength of the transverse Z magnetic field.
+    wires : Sequence, optional
+        Custom wire identifiers of length n. If None, defaults to list(range(n)).
+
+    Returns
+    -------
+    qml.Hamiltonian
+        PennyLane Hamiltonian with all-to-all connectivity and Kac normalization.
+        Contains 4 * n(n - 1) / 2 = 2n(n - 1) two-body terms and n single-body terms (total 2n^2 - n terms).
+    """
+    import math
+
+    if n < 1:
+        raise ValueError(f"Number of qubits n must be at least 1, got {n}")
+
+    if wires is None:
+        wire_list = list(range(n))
+    else:
+        wire_list = list(wires)
+        if len(wire_list) != n:
+            raise ValueError(f"Expected {n} wires, got {len(wire_list)}")
+
+    coeffs: List[float] = []
+    ops: List[qml.operation.Operator] = []
+
+    kac_factor = 1.0 / math.sqrt(n) if n > 0 else 1.0
+    scale_jx = Jx * kac_factor
+    scale_jy = Jy * kac_factor
+    scale_d = D * kac_factor
+
+    # All-to-all two-body interactions (0 <= i < j < n)
+    if n > 1:
+        for i in range(n):
+            for j in range(i + 1, n):
+                w1, w2 = wire_list[i], wire_list[j]
+
+                if scale_jx != 0.0:
+                    coeffs.append(-float(scale_jx))
+                    ops.append(qml.PauliX(w1) @ qml.PauliX(w2))
+
+                if scale_jy != 0.0:
+                    coeffs.append(-float(scale_jy))
+                    ops.append(qml.PauliY(w1) @ qml.PauliY(w2))
+
+                if scale_d != 0.0:
+                    # - D * X_i Y_j
+                    coeffs.append(-float(scale_d))
+                    ops.append(qml.PauliX(w1) @ qml.PauliY(w2))
+
+                    # + D * Y_i X_j
+                    coeffs.append(float(scale_d))
+                    ops.append(qml.PauliY(w1) @ qml.PauliX(w2))
+
+    # Transverse magnetic field Z_i (all spins: 0 to n-1)
+    if h != 0.0:
+        for i in range(n):
+            coeffs.append(-float(h))
+            ops.append(qml.PauliZ(wire_list[i]))
+
+    if not ops:
+        return qml.Hamiltonian([], [])
+
+    return qml.Hamiltonian(coeffs, ops)
+
+

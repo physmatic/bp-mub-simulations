@@ -22,13 +22,13 @@ import matplotlib.pyplot as plt
 
 try:
     from .ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
+    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian
     from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from .pauli_to_j import p_to_j
     from .state_preparation import sample_mub_basis_and_state, prepare_mub_state
 except ImportError:
     from ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
+    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian
     from mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from pauli_to_j import p_to_j
     from state_preparation import sample_mub_basis_and_state, prepare_mub_state
@@ -51,10 +51,10 @@ def evaluate_single_param_shift(
 
 
 def run_variance_benchmark(
-    qubits_list: Sequence[int] = (2, 3, 4, 5, 6),
-    num_samples: int = 200,
-    hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "xy_dm",
-    layers_factor: int = 2,
+    qubits_list: Sequence[int] = (3, 4, 5, 6, 7, 8),
+    num_samples: int = 1000,
+    hamiltonian_type: Union[str, Callable[[int], qml.Hamiltonian]] = "all_to_all_dm",
+    layers_factor: int = 1,
     layers_fn: Optional[Callable[[int], int]] = None,
     metric: str = "mean_param_var",
     param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
@@ -69,13 +69,13 @@ def run_variance_benchmark(
     Parameters
     ----------
     qubits_list : Sequence[int]
-        List of qubit counts to benchmark, e.g. [2, 3, 4, 5, 6].
+        List of qubit counts to benchmark, e.g. [3, 4, 5, 6, 7, 8].
     num_samples : int
         Number of random initialization trials per qubit count.
-    hamiltonian_type : str or Callable, default="xy_dm"
-        Hamiltonian to benchmark: "xy_dm" (1D XY with DM interaction) or "tfim",
+    hamiltonian_type : str or Callable, default="all_to_all_dm"
+        Hamiltonian to benchmark: "all_to_all_dm", "xy_dm", or "tfim",
         or a custom callable n -> qml.Hamiltonian.
-    layers_factor : int, default=2
+    layers_factor : int, default=1
         Multiplier for ansatz depth: layers L = layers_factor * n.
     layers_fn : Callable[[int], int], optional
         Custom function n -> layers. Overrides layers_factor if provided.
@@ -111,14 +111,17 @@ def run_variance_benchmark(
         layers_fn = lambda n: layers_factor * n
 
     if isinstance(hamiltonian_type, str):
-        if hamiltonian_type.lower() in ["xy_dm", "xy", "dm"]:
+        if hamiltonian_type.lower() in ["all_to_all_dm", "all_to_all", "dm_all"]:
+            ham_builder = lambda n, wires: build_all_to_all_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
+            ham_name = "All-to-All DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0, 1/\\sqrt{n}$)"
+        elif hamiltonian_type.lower() in ["xy_dm", "xy", "dm"]:
             ham_builder = lambda n, wires: build_xy_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0, wires=wires)
             ham_name = "1D XY-DM Model ($J_x=1.0, J_y=0.5, D=0.8, h=1.0$)"
         elif hamiltonian_type.lower() == "tfim":
             ham_builder = lambda n, wires: build_tfim_hamiltonian(n, J=1.0, h=1.0, wires=wires)
             ham_name = "1D TFIM Model ($J=1.0, h=1.0$)"
         else:
-            raise ValueError(f"Unknown hamiltonian_type '{hamiltonian_type}'. Choose 'xy_dm' or 'tfim'.")
+            raise ValueError(f"Unknown hamiltonian_type '{hamiltonian_type}'. Choose 'all_to_all_dm', 'xy_dm', or 'tfim'.")
     else:
         ham_builder = hamiltonian_type
         ham_name = getattr(hamiltonian_type, "__name__", "Custom Hamiltonian")
@@ -409,12 +412,14 @@ def plot_variance_benchmark(
     ax.set_yscale("log")
     ax.set_xlabel(r"Number of Qubits ($n$)", fontsize=13, fontweight="bold")
 
+    depth_str = f"L = {lf}n" if lf != 1 else "L = n"
+
     if is_mean_var:
         ax.set_ylabel(r"Mean Cost Derivative Variance $(1/P) \sum \mathrm{Var}[\partial_k C]$", fontsize=12, fontweight="bold")
         ax.set_title(
             f"VQE Mean Cost Derivative Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth $L={lf}n$, $(1/P) \\sum \\mathrm{{Var}}[\\partial_k C]$ ($N={results.get('num_samples', 200)}$ samples)",
+            f"HEA Depth ${depth_str}$, $(1/P) \\sum \\mathrm{{Var}}[\\partial_k C]$ ($N={results.get('num_samples', 1000)}$ samples)",
             fontsize=11,
             pad=10
         )
@@ -423,7 +428,7 @@ def plot_variance_benchmark(
         ax.set_title(
             f"VQE Squared Gradient Norm Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth $L={lf}n$, $\\mathrm{{Var}}[\\|\\nabla C\\|^2]$ ($N={results.get('num_samples', 200)}$ samples)",
+            f"HEA Depth ${depth_str}$, $\\mathrm{{Var}}[\\|\\nabla C\\|^2]$ ($N={results.get('num_samples', 1000)}$ samples)",
             fontsize=11,
             pad=10
         )
@@ -438,10 +443,14 @@ def plot_variance_benchmark(
         ax.set_title(
             f"VQE Cost Derivative Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth $L={lf}n$, Parameter ${param_label}$",
+            f"HEA Depth ${depth_str}$, Parameter ${param_label}$",
             fontsize=11,
             pad=10
         )
+
+    # Ensure y-axis covers at least 10^-3 to 10^0
+    ymin, ymax = ax.get_ylim()
+    ax.set_ylim(bottom=min(1e-3, ymin), top=max(1.0, ymax))
 
     ax.set_xticks(qubits)
     ax.grid(True, which="both", linestyle=":", alpha=0.6)

@@ -9,7 +9,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian
+from src.MUB_Circuits_generator.hamiltonians import (
+    build_tfim_hamiltonian,
+    build_xy_dm_hamiltonian,
+    build_all_to_all_dm_hamiltonian,
+)
 from src.MUB_Circuits_generator.mub_weights import (
     compute_mub_weights,
     count_active_stabilizer_sets,
@@ -27,6 +31,18 @@ def test_xy_dm_term_counts():
         expected = 5 * n - 4
         assert len(ops) == expected, f"n={n}: expected {expected} terms, got {len(ops)}"
         assert len(coeffs) == expected
+
+
+def test_all_to_all_dm_term_counts():
+    """Verify term counts for All-to-All DM Hamiltonian: 2n(n-1) + n = 2n^2 - n terms."""
+    for n in [2, 3, 4, 5, 6, 7, 8]:
+        H = build_all_to_all_dm_hamiltonian(n, Jx=1.0, Jy=0.5, D=0.8, h=1.0)
+        coeffs, ops = H.terms()
+        expected = 2 * n**2 - n
+        assert len(ops) == expected, f"n={n}: expected {expected} terms, got {len(ops)}"
+        assert len(coeffs) == expected
+        active = count_active_stabilizer_sets(H, p_to_j)
+        assert active > 0
 
 
 def test_count_active_stabilizers_tfim():
@@ -86,6 +102,7 @@ def test_xy_dm_coefficient_signs():
 
 if __name__ == "__main__":
     test_xy_dm_term_counts()
+    test_all_to_all_dm_term_counts()
     test_count_active_stabilizers_tfim()
     test_count_active_stabilizers_xy_dm()
     test_xy_dm_coefficient_signs()

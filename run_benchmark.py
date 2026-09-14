@@ -27,27 +27,27 @@ def main():
         "-q", "--qubits",
         type=int,
         nargs="+",
-        default=[2, 3, 4, 5, 6],
-        help="List of qubit counts to benchmark (default: 2 3 4 5 6)"
+        default=[3, 4, 5, 6, 7, 8],
+        help="List of qubit counts to benchmark (default: 3 4 5 6 7 8)"
     )
     parser.add_argument(
         "-s", "--samples",
         type=int,
-        default=200,
-        help="Number of initialization samples per qubit count (default: 200)"
+        default=1000,
+        help="Number of initialization samples per qubit count (default: 1000)"
     )
     parser.add_argument(
         "-m", "--model",
         type=str,
-        choices=["xy_dm", "tfim"],
-        default="xy_dm",
-        help="Hamiltonian model: 'xy_dm' (1D XY with DM interaction) or 'tfim' (default: xy_dm)"
+        choices=["all_to_all_dm", "xy_dm", "tfim"],
+        default="all_to_all_dm",
+        help="Hamiltonian model: 'all_to_all_dm' (All-to-All DM with Kac norm), 'xy_dm' (1D XY with DM), or 'tfim' (default: all_to_all_dm)"
     )
     parser.add_argument(
         "-l", "--layers-factor",
         type=int,
-        default=2,
-        help="Multiplier for ansatz depth: layers L = layers_factor * n (default: 2)"
+        default=1,
+        help="Multiplier for ansatz depth: layers L = layers_factor * n (default: 1, i.e., L=n)"
     )
     parser.add_argument(
         "-p", "--param-idx",
