@@ -57,6 +57,8 @@ def run_variance_benchmark(
     layers_factor: int = 2,
     layers_fn: Optional[Callable[[int], int]] = None,
     metric: str = "mean_param_var",
+    diff_method: str = "adjoint",
+    device_name: str = "auto",
     param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
     seed: int = 42,
     verbose: bool = True
@@ -84,6 +86,12 @@ def run_variance_benchmark(
         - "mean_param_var" / "mean_var": Mean parameter variance (1/P) sum_{k} Var[∂_k C].
         - "grad_norm_sq" / "norm_sq": Variance of squared gradient norm Var[||∇C||^2].
         - "single_param": Variance of partial derivative Var[∂_k C] at param_idx.
+    diff_method : str, default="adjoint"
+        PennyLane differentiation method: "adjoint" (fastest, O(1) memory gate-by-gate backwards pass)
+        or "backprop" (standard reverse-mode automatic differentiation).
+    device_name : str, default="auto"
+        PennyLane device: "auto" (detects "lightning.qubit" if available, else "default.qubit"),
+        "lightning.qubit", or "default.qubit".
     param_idx : int, str, or Callable, default="mid"
         Parameter index k if metric="single_param".
         Can be an int, 'mid' / 'middle' for (L // 2) * n + (n // 2),
@@ -101,6 +109,8 @@ def run_variance_benchmark(
         - "hamiltonian_name": name of Hamiltonian model
         - "layers_factor": depth factor
         - "metric": metric evaluated
+        - "diff_method": differentiation method used
+        - "device_name": backend device used
         - "haar_var": list of Var_Haar[metric]
         - "haar_mean": list of Mean_Haar[metric]
         - "mub_var": list of Var_MUB[metric]
@@ -132,10 +142,22 @@ def run_variance_benchmark(
 
     actual_metric = "mean_param_var" if is_mean_var else ("grad_norm_sq" if is_norm_sq else "single_param")
 
+    # Resolve target device
+    if device_name.lower() == "auto":
+        try:
+            import pennylane_lightning
+            resolved_dev = "lightning.qubit"
+        except ImportError:
+            resolved_dev = "default.qubit"
+    else:
+        resolved_dev = device_name
+
     results = {
         "qubits": list(qubits_list),
         "num_samples": num_samples,
         "metric": actual_metric,
+        "diff_method": diff_method,
+        "device_name": resolved_dev,
         "param_idx_spec": str(param_idx) if not callable(param_idx) else "callable",
         "evaluated_param_indices": {},
         "hamiltonian_name": ham_name,
@@ -165,7 +187,7 @@ def run_variance_benchmark(
         print("=" * 85)
         print(f" COST GRADIENT VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
         print(f" Hamiltonian: {ham_name}")
-        print(f" Ansatz Depth: L = {layers_factor}n | Metric: {metric_name} | Samples: {num_samples}")
+        print(f" Device: {resolved_dev} | Diff Method: {diff_method} | Depth: L = {layers_factor}n | Samples: {num_samples}")
         print("=" * 85)
         print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header:<18} | {col_header_mub:<18} | {'Time (s)':<8}")
         print("-" * 85)
@@ -180,11 +202,11 @@ def run_variance_benchmark(
         weights = compute_mub_weights(H, p_to_j, wires=wires)
         active_count = len(weights)
         results["active_stabilizer_counts"][n] = active_count
-        dev = qml.device("default.qubit", wires=wires)
+        dev = qml.device(resolved_dev, wires=wires)
 
         if is_mean_var:
             # 1. Haar Initialization: evaluate full gradient vectors
-            @qml.qnode(dev, diff_method="backprop")
+            @qml.qnode(dev, diff_method=diff_method)
             def haar_circuit(p):
                 hardware_efficient_ansatz(p, wires=wires, layers=layers)
                 return qml.expval(H)
@@ -207,7 +229,7 @@ def run_variance_benchmark(
             for _ in range(num_samples):
                 j, k = sample_mub_basis_and_state(weights, n, rng=rng)
 
-                @qml.qnode(dev, diff_method="backprop")
+                @qml.qnode(dev, diff_method=diff_method)
                 def mub_circuit(p, _j=j, _k=k):
                     prepare_mub_state(n, _j, _k, wires=wires)
                     hardware_efficient_ansatz(p, wires=wires, layers=layers)
@@ -230,7 +252,7 @@ def run_variance_benchmark(
 
         elif is_norm_sq:
             # 1. Haar Initialization - Full gradient norm squared
-            @qml.qnode(dev, diff_method="backprop")
+            @qml.qnode(dev, diff_method=diff_method)
             def haar_circuit(p):
                 hardware_efficient_ansatz(p, wires=wires, layers=layers)
                 return qml.expval(H)
@@ -252,7 +274,7 @@ def run_variance_benchmark(
             for _ in range(num_samples):
                 j, k = sample_mub_basis_and_state(weights, n, rng=rng)
 
-                @qml.qnode(dev, diff_method="backprop")
+                @qml.qnode(dev, diff_method=diff_method)
                 def mub_circuit(p, _j=j, _k=k):
                     prepare_mub_state(n, _j, _k, wires=wires)
                     hardware_efficient_ansatz(p, wires=wires, layers=layers)
