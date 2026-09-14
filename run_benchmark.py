@@ -58,8 +58,8 @@ def main():
     parser.add_argument(
         "-o", "--output",
         type=str,
-        default="outputs/gradient_variance_benchmark.png",
-        help="Path for saving benchmark plot (default: outputs/gradient_variance_benchmark.png)"
+        default="outputs/gradient_variance_benchmark.pdf",
+        help="Path for saving benchmark plot (default: outputs/gradient_variance_benchmark.pdf)"
     )
     parser.add_argument(
         "--json-output",

@@ -367,12 +367,10 @@ def run_variance_benchmark(
 
     return results
 
-    return results
-
 
 def plot_variance_benchmark(
     results: Dict,
-    output_path: Union[str, Path] = "outputs/gradient_variance_benchmark.png",
+    output_path: Union[str, Path] = "outputs/gradient_variance_benchmark.pdf",
     show: bool = False
 ) -> Path:
     """
