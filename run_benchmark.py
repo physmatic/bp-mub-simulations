@@ -136,12 +136,14 @@ def main():
     else:
         metric_label = "Var[∂_k C]"
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 105)
     print(f" SUMMARY TABLE: GRADIENT METRIC VARIANCE {metric_label}")
-    print("=" * 90)
-    print(f"{'n':<4} | {'Param / Mode':<12} | {'Active Sets':<12} | {'Haar Var':<16} | {'MUB Var':<16} | {'Ratio (MUB/Haar)':<16}")
-    print("-" * 90)
-    for n, h_var, m_var in zip(results["qubits"], results["haar_var"], results["mub_var"]):
+    print("=" * 105)
+    print(f"{'n':<4} | {'Param / Mode':<12} | {'Active Sets':<12} | {'Haar Var ± SE':<24} | {'MUB Var ± SE':<24} | {'Ratio (MUB/Haar)':<16}")
+    print("-" * 105)
+    haar_errs = results.get("haar_var_err", [0.0] * len(results["qubits"]))
+    mub_errs = results.get("mub_var_err", [0.0] * len(results["qubits"]))
+    for n, h_var, h_err, m_var, m_err in zip(results["qubits"], results["haar_var"], haar_errs, results["mub_var"], mub_errs):
         if metric_type == "mean_param_var":
             mode_label = "Mean(P)"
         elif metric_type == "grad_norm_sq":
@@ -150,8 +152,10 @@ def main():
             mode_label = f"k={results['evaluated_param_indices'].get(n, '-')}"
         act = results["active_stabilizer_counts"].get(n, "-")
         ratio = m_var / h_var if h_var > 0 else float("inf")
-        print(f"{n:<4} | {mode_label:<12} | {act:<12} | {h_var:<16.6e} | {m_var:<16.6e} | {ratio:<16.3f}")
-    print("=" * 90)
+        h_str = f"{h_var:.4e} ± {h_err:.1e}"
+        m_str = f"{m_var:.4e} ± {m_err:.1e}"
+        print(f"{n:<4} | {mode_label:<12} | {act:<12} | {h_str:<24} | {m_str:<24} | {ratio:<16.3f}")
+    print("=" * 105)
     print(f"\n[BENCHMARK FINISHED] Total time elapsed: {total_elapsed_time:.2f} seconds ({total_elapsed_time / 60:.2f} minutes).")
 
 

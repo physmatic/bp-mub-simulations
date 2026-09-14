@@ -50,6 +50,51 @@ def evaluate_single_param_shift(
     return float((val_plus - val_minus) / 2.0)
 
 
+def compute_bootstrap_variance_error(
+    data: np.ndarray,
+    is_vector: bool = True,
+    num_resamples: int = 100,
+    rng: Optional[np.random.Generator] = None
+) -> float:
+    """
+    Computes the bootstrap standard error of the sample variance across trials.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Array of sample measurements. Shape (N, P) if is_vector else (N,).
+    is_vector : bool, default=True
+        If True, metric is the mean parameter variance (1/P) sum Var[∂_k C].
+        If False, metric is the variance of the 1D sample array.
+    num_resamples : int, default=100
+        Number of bootstrap resamples.
+    rng : np.random.Generator, optional
+        Random generator for reproducibility.
+
+    Returns
+    -------
+    float
+        Standard error of the variance metric.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
+    N = len(data)
+    if N < 2:
+        return 0.0
+
+    boot_indices = rng.integers(0, N, size=(num_resamples, N))
+    boot_stats = []
+    for b in range(num_resamples):
+        sample = data[boot_indices[b]]
+        if is_vector:
+            stat = float(np.mean(np.var(sample, axis=0, ddof=1)))
+        else:
+            stat = float(np.var(sample, ddof=1))
+        boot_stats.append(stat)
+
+    return float(np.std(boot_stats, ddof=1))
+
+
 def run_variance_benchmark(
     qubits_list: Sequence[int] = (3, 4, 5, 6, 7, 8),
     num_samples: int = 1000,
@@ -163,8 +208,10 @@ def run_variance_benchmark(
         "hamiltonian_name": ham_name,
         "layers_factor": layers_factor,
         "haar_var": [],
+        "haar_var_err": [],
         "haar_mean": [],
         "mub_var": [],
+        "mub_var_err": [],
         "mub_mean": [],
         "active_stabilizer_counts": {},
         "details": {}
@@ -172,25 +219,25 @@ def run_variance_benchmark(
 
     if is_mean_var:
         metric_name = "(1/P) sum Var[∂_k C]"
-        col_header = "Mean Var Haar"
-        col_header_mub = "Mean Var MUB"
+        col_header = "Haar Var ± SE"
+        col_header_mub = "MUB Var ± SE"
     elif is_norm_sq:
         metric_name = "Var[||∇C||^2]"
-        col_header = "Var[||∇C||^2] Haar"
-        col_header_mub = "Var[||∇C||^2] MUB"
+        col_header = "Haar Var ± SE"
+        col_header_mub = "MUB Var ± SE"
     else:
         metric_name = f"Var[∂_k C] ({param_idx})"
-        col_header = "Var[∂_k C] Haar"
-        col_header_mub = "Var[∂_k C] MUB"
+        col_header = "Haar Var ± SE"
+        col_header_mub = "MUB Var ± SE"
 
     if verbose:
-        print("=" * 85)
+        print("=" * 95)
         print(f" COST GRADIENT VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
         print(f" Hamiltonian: {ham_name}")
         print(f" Device: {resolved_dev} | Diff Method: {diff_method} | Depth: L = {layers_factor}n | Samples: {num_samples}")
-        print("=" * 85)
-        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header:<18} | {col_header_mub:<18} | {'Time (s)':<8}")
-        print("-" * 85)
+        print("=" * 95)
+        print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header:<22} | {col_header_mub:<22} | {'Time (s)':<8}")
+        print("-" * 95)
 
     for n in qubits_list:
         t0 = time.time()
@@ -221,6 +268,7 @@ def run_variance_benchmark(
             haar_grads = np.array(haar_grads)  # shape (num_samples, num_p)
             haar_param_vars = np.var(haar_grads, axis=0, ddof=1)  # shape (num_p,)
             h_var = float(np.mean(haar_param_vars))
+            h_var_err = compute_bootstrap_variance_error(haar_grads, is_vector=True, rng=rng)
             h_mean = float(np.mean(haar_grads))
 
             # 2. MUB Initialization: evaluate full gradient vectors
@@ -241,11 +289,14 @@ def run_variance_benchmark(
             mub_grads = np.array(mub_grads)  # shape (num_samples, num_p)
             mub_param_vars = np.var(mub_grads, axis=0, ddof=1)  # shape (num_p,)
             m_var = float(np.mean(mub_param_vars))
+            m_var_err = compute_bootstrap_variance_error(mub_grads, is_vector=True, rng=rng)
             m_mean = float(np.mean(mub_grads))
 
             details_entry = {
                 "layers": layers,
                 "num_params": num_p,
+                "haar_var_err": h_var_err,
+                "mub_var_err": m_var_err,
                 "haar_param_vars": haar_param_vars.tolist(),
                 "mub_param_vars": mub_param_vars.tolist(),
             }
@@ -266,6 +317,7 @@ def run_variance_benchmark(
 
             haar_vals = np.array(haar_vals)
             h_var = float(np.var(haar_vals, ddof=1))
+            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=rng)
             h_mean = float(np.mean(haar_vals))
 
             # 2. MUB Initialization - Full gradient norm squared
@@ -285,11 +337,14 @@ def run_variance_benchmark(
 
             mub_vals = np.array(mub_vals)
             m_var = float(np.var(mub_vals, ddof=1))
+            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=rng)
             m_mean = float(np.mean(mub_vals))
 
             details_entry = {
                 "layers": layers,
                 "num_params": num_p,
+                "haar_var_err": h_var_err,
+                "mub_var_err": m_var_err,
                 "haar_vals": haar_vals.tolist(),
                 "mub_vals": mub_vals.tolist(),
             }
@@ -322,6 +377,7 @@ def run_variance_benchmark(
 
             haar_vals = np.array(haar_vals)
             h_var = float(np.var(haar_vals, ddof=1))
+            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=rng)
             h_mean = float(np.mean(haar_vals))
 
             p0 = np.zeros(num_p, dtype=float)
@@ -340,12 +396,15 @@ def run_variance_benchmark(
 
             mub_vals = np.array(mub_vals)
             m_var = float(np.var(mub_vals, ddof=1))
+            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=rng)
             m_mean = float(np.mean(mub_vals))
 
             details_entry = {
                 "layers": layers,
                 "num_params": num_p,
                 "param_k": actual_k,
+                "haar_var_err": h_var_err,
+                "mub_var_err": m_var_err,
                 "haar_vals": haar_vals.tolist(),
                 "mub_vals": mub_vals.tolist(),
             }
@@ -353,14 +412,18 @@ def run_variance_benchmark(
         dt = time.time() - t0
 
         results["haar_var"].append(h_var)
+        results["haar_var_err"].append(h_var_err)
         results["haar_mean"].append(h_mean)
         results["mub_var"].append(m_var)
+        results["mub_var_err"].append(m_var_err)
         results["mub_mean"].append(m_mean)
         details_entry["runtime_sec"] = dt
         results["details"][n] = details_entry
 
         if verbose:
-            print(f"{n:<4} | {layers:<4} | {num_p:<6} | {active_count:<7} | {h_var:<18.6e} | {m_var:<18.6e} | {dt:<8.2f}")
+            h_str = f"{h_var:.4e} ± {h_var_err:.1e}"
+            m_str = f"{m_var:.4e} ± {m_var_err:.1e}"
+            print(f"{n:<4} | {layers:<4} | {num_p:<6} | {active_count:<7} | {h_str:<22} | {m_str:<22} | {dt:<8.2f}")
 
     if verbose:
         print("=" * 85)
@@ -397,32 +460,67 @@ def plot_variance_benchmark(
     qubits = np.array(results["qubits"])
     haar_var = np.array(results["haar_var"])
     mub_var = np.array(results["mub_var"])
+    haar_err = np.array(results["haar_var_err"]) if "haar_var_err" in results and len(results["haar_var_err"]) == len(haar_var) else None
+    mub_err = np.array(results["mub_var_err"]) if "mub_var_err" in results and len(results["mub_var_err"]) == len(mub_var) else None
 
     fig, ax = plt.subplots(figsize=(8, 5.5), dpi=300)
 
-    # Plot empirical points and lines
-    ax.plot(
-        qubits,
-        mub_var,
-        marker="o",
-        markersize=8,
-        linewidth=2.2,
-        color="#1E88E5",
-        label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
-        zorder=4
-    )
+    # Plot MUB curve
+    if mub_err is not None and np.any(mub_err > 0):
+        ax.errorbar(
+            qubits,
+            mub_var,
+            yerr=mub_err,
+            fmt="o-",
+            markersize=7,
+            linewidth=2.2,
+            color="#1E88E5",
+            capsize=3.5,
+            capthick=1.2,
+            elinewidth=1.2,
+            label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
+            zorder=4
+        )
+    else:
+        ax.plot(
+            qubits,
+            mub_var,
+            marker="o",
+            markersize=8,
+            linewidth=2.2,
+            color="#1E88E5",
+            label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
+            zorder=4
+        )
 
-    ax.plot(
-        qubits,
-        haar_var,
-        marker="s",
-        markersize=8,
-        linewidth=2.2,
-        color="#D81B60",
-        linestyle="--",
-        label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
-        zorder=3
-    )
+    # Plot Haar curve
+    if haar_err is not None and np.any(haar_err > 0):
+        ax.errorbar(
+            qubits,
+            haar_var,
+            yerr=haar_err,
+            fmt="s--",
+            markersize=7,
+            linewidth=2.2,
+            color="#D81B60",
+            capsize=3.5,
+            capthick=1.2,
+            elinewidth=1.2,
+            label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
+            zorder=3
+        )
+    else:
+        ax.plot(
+            qubits,
+            haar_var,
+            marker="s",
+            markersize=8,
+            linewidth=2.2,
+            color="#D81B60",
+            linestyle="--",
+            label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
+            zorder=3
+        )
 
     is_mean_var = results.get("metric", "") == "mean_param_var"
     is_norm_sq = results.get("metric", "") == "grad_norm_sq"
