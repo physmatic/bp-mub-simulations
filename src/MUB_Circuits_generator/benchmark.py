@@ -465,61 +465,53 @@ def plot_variance_benchmark(
 
     fig, ax = plt.subplots(figsize=(8, 5.5), dpi=300)
 
-    # Plot MUB curve
+    # Plot MUB curve and 95% confidence band
+    ax.plot(
+        qubits,
+        mub_var,
+        marker="o",
+        markersize=7,
+        linewidth=2.2,
+        color="#1E88E5",
+        label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
+        zorder=4
+    )
     if mub_err is not None and np.any(mub_err > 0):
-        ax.errorbar(
+        mub_lower = np.maximum(mub_var - 1.96 * mub_err, mub_var * 0.5)
+        mub_upper = mub_var + 1.96 * mub_err
+        ax.fill_between(
             qubits,
-            mub_var,
-            yerr=mub_err,
-            fmt="o-",
-            markersize=7,
-            linewidth=2.2,
+            mub_lower,
+            mub_upper,
             color="#1E88E5",
-            capsize=3.5,
-            capthick=1.2,
-            elinewidth=1.2,
-            label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
-            zorder=4
-        )
-    else:
-        ax.plot(
-            qubits,
-            mub_var,
-            marker="o",
-            markersize=8,
-            linewidth=2.2,
-            color="#1E88E5",
-            label=r"$\mathbf{MUB\ Ensemble\ (Weighted)}$: $|\psi_k^j\rangle = U(j)|k\rangle$",
-            zorder=4
+            alpha=0.28,
+            label=r"$\mathrm{MUB\ 95\%\ CI\ (\pm 1.96\ \mathrm{SE})}$",
+            zorder=2
         )
 
-    # Plot Haar curve
+    # Plot Haar curve and 95% confidence band
+    ax.plot(
+        qubits,
+        haar_var,
+        marker="s",
+        markersize=7,
+        linewidth=2.2,
+        color="#D81B60",
+        linestyle="--",
+        label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
+        zorder=3
+    )
     if haar_err is not None and np.any(haar_err > 0):
-        ax.errorbar(
+        haar_lower = np.maximum(haar_var - 1.96 * haar_err, haar_var * 0.5)
+        haar_upper = haar_var + 1.96 * haar_err
+        ax.fill_between(
             qubits,
-            haar_var,
-            yerr=haar_err,
-            fmt="s--",
-            markersize=7,
-            linewidth=2.2,
+            haar_lower,
+            haar_upper,
             color="#D81B60",
-            capsize=3.5,
-            capthick=1.2,
-            elinewidth=1.2,
-            label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
-            zorder=3
-        )
-    else:
-        ax.plot(
-            qubits,
-            haar_var,
-            marker="s",
-            markersize=8,
-            linewidth=2.2,
-            color="#D81B60",
-            linestyle="--",
-            label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
-            zorder=3
+            alpha=0.25,
+            label=r"$\mathrm{Haar\ 95\%\ CI\ (\pm 1.96\ \mathrm{SE})}$",
+            zorder=1
         )
 
     is_mean_var = results.get("metric", "") == "mean_param_var"
@@ -567,7 +559,14 @@ def plot_variance_benchmark(
         )
 
     # Cut empty parts of y-axis and focus tightly on the data range
-    all_vals = np.concatenate([haar_var, mub_var])
+    all_vals_list = [haar_var, mub_var]
+    if haar_err is not None and np.any(haar_err > 0):
+        all_vals_list.append(np.maximum(haar_var - 1.96 * haar_err, haar_var * 0.5))
+        all_vals_list.append(haar_var + 1.96 * haar_err)
+    if mub_err is not None and np.any(mub_err > 0):
+        all_vals_list.append(np.maximum(mub_var - 1.96 * mub_err, mub_var * 0.5))
+        all_vals_list.append(mub_var + 1.96 * mub_err)
+    all_vals = np.concatenate(all_vals_list)
     pos_vals = all_vals[all_vals > 0]
     if len(pos_vals) > 0:
         min_val = float(np.min(pos_vals))
