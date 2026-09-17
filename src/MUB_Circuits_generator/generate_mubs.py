@@ -78,8 +78,12 @@ def draw_circuits_grid(circuit_indices: List[Optional[int]], n: int = QUBIT_NUM)
     plt.show()
 
 
-def generate_mubs(run_simultion: bool = False, plot: bool = True) -> List[List[np.ndarray]]:
-    dim = 2 ** QUBIT_NUM
+def generate_mubs(n: int = QUBIT_NUM, run_simultion: bool = False, plot: bool = True) -> List[List[np.ndarray]]:
+    if isinstance(n, bool):
+        run_simultion = n
+        n = QUBIT_NUM
+
+    dim = 2 ** n
     standard_basis = [np.eye(dim)[:, i] for i in range(dim)]
     mubs = [standard_basis]
     circuits: List[Optional[int]] = [None]
@@ -88,7 +92,7 @@ def generate_mubs(run_simultion: bool = False, plot: bool = True) -> List[List[n
         circuits.append(j)
 
         # Unitary matrix for basis j
-        u_j = mub_unitary(QUBIT_NUM, j)
+        u_j = mub_unitary(n, j)
         # Transformed basis states are the columns of U_j
         new_base = [u_j[:, i] for i in range(dim)]
 
@@ -100,11 +104,11 @@ def generate_mubs(run_simultion: bool = False, plot: bool = True) -> List[List[n
         mubs.append(new_base)
 
         if run_simultion:
-            dev_sim = qml.device("default.qubit", wires=QUBIT_NUM, shots=1024)
+            dev_sim = qml.device("default.qubit", wires=n, shots=1024)
 
             @qml.qnode(dev_sim)
             def sim_node():
-                mub_circuit(QUBIT_NUM, j)
+                mub_circuit(n, j)
                 return qml.counts()
 
             counts = sim_node()
@@ -116,7 +120,7 @@ def generate_mubs(run_simultion: bool = False, plot: bool = True) -> List[List[n
             plt.show()
 
     if plot:
-        draw_circuits_grid(circuits, QUBIT_NUM)
+        draw_circuits_grid(circuits, n)
 
     return mubs
 
