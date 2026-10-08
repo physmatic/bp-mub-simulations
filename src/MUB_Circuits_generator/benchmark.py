@@ -22,13 +22,13 @@ import matplotlib.pyplot as plt
 
 try:
     from .ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian
+    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
     from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from .pauli_to_j import p_to_j
     from .state_preparation import sample_mub_basis_and_state, prepare_mub_state
 except ImportError:
     from ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian
+    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
     from mub_weights import compute_mub_weights, count_active_stabilizer_sets
     from pauli_to_j import p_to_j
     from state_preparation import sample_mub_basis_and_state, prepare_mub_state
@@ -48,6 +48,64 @@ def evaluate_single_param_shift(
     val_plus = circuit_fn(params + shift)
     val_minus = circuit_fn(params - shift)
     return float((val_plus - val_minus) / 2.0)
+
+
+def fit_n_exp_decay(
+    qubits: Sequence[int],
+    var: Sequence[float],
+    err: Optional[Sequence[float]] = None,
+    n_min: int = 7,
+) -> Optional[Dict[str, float]]:
+    """
+    Fits Var(n) ~ A * n * b**(-n) over n >= n_min using weighted least squares
+    (weights 1/SE when errors are given). The fit is parametrized as
+    exp(logA) * n * exp(-ln_b * n) for numerical stability.
+
+    Returns
+    -------
+    dict or None
+        {"A", "b", "A_err", "b_err", "n_min"}, or None if there are fewer than
+        3 points or any variance is non-positive (e.g. an exactly-zero curve).
+    """
+    from scipy.optimize import curve_fit
+
+    n_arr = np.asarray(qubits, dtype=float)
+    v_arr = np.asarray(var, dtype=float)
+    mask = n_arr >= n_min
+    n_fit, v_fit = n_arr[mask], v_arr[mask]
+    if len(n_fit) < 3 or np.any(v_fit <= 0):
+        return None
+
+    sigma = None
+    if err is not None:
+        e_fit = np.asarray(err, dtype=float)[mask]
+        if np.all(e_fit > 0):
+            sigma = e_fit
+
+    slope, intercept = np.polyfit(n_fit, np.log(v_fit / n_fit), 1)
+    p0 = [intercept, -slope]
+
+    def model(n, log_a, ln_b):
+        return np.exp(log_a) * n * np.exp(-ln_b * n)
+
+    popt, pcov = curve_fit(model, n_fit, v_fit, p0=p0, sigma=sigma, absolute_sigma=sigma is not None, maxfev=20000)
+    perr = np.sqrt(np.diag(pcov))
+    A, b = float(np.exp(popt[0])), float(np.exp(popt[1]))
+    return {
+        "A": A,
+        "b": b,
+        "A_err": float(A * perr[0]),
+        "b_err": float(b * perr[1]),
+        "n_min": int(n_min),
+    }
+
+
+def add_decay_fits(results: Dict, n_min: int = 7) -> Dict:
+    """Adds results["fits"] = {"haar": ...}; only the Haar curve is fitted."""
+    results["fits"] = {
+        "haar": fit_n_exp_decay(results["qubits"], results["haar_var"], results.get("haar_var_err"), n_min),
+    }
+    return results
 
 
 def compute_bootstrap_variance_error(
@@ -120,7 +178,7 @@ def run_variance_benchmark(
     num_samples : int
         Number of random initialization trials per qubit count.
     hamiltonian_type : str or Callable, default="all_to_all_dm"
-        Hamiltonian to benchmark: "all_to_all_dm", "xy_dm", or "tfim",
+        Hamiltonian to benchmark: "all_to_all_dm", "xy_dm", "tfim", or "ising",
         or a custom callable n -> qml.Hamiltonian.
     layers_factor : int, default=2
         Multiplier for ansatz depth: layers L = layers_factor * n.
@@ -175,8 +233,11 @@ def run_variance_benchmark(
         elif hamiltonian_type.lower() == "tfim":
             ham_builder = lambda n, wires: build_tfim_hamiltonian(n, J=1.0, h=1.0, wires=wires)
             ham_name = "1D TFIM Model ($J=1.0, h=1.0$)"
+        elif hamiltonian_type.lower() == "ising":
+            ham_builder = lambda n, wires: build_ising_hamiltonian(n, J=1.0, h=1.0, wires=wires)
+            ham_name = "1D Classical Ising Model ($J=1.0, h=1.0$, ZZ + Z)"
         else:
-            raise ValueError(f"Unknown hamiltonian_type '{hamiltonian_type}'. Choose 'all_to_all_dm', 'xy_dm', or 'tfim'.")
+            raise ValueError(f"Unknown hamiltonian_type '{hamiltonian_type}'. Choose 'all_to_all_dm', 'xy_dm', 'tfim', or 'ising'.")
     else:
         ham_builder = hamiltonian_type
         ham_name = getattr(hamiltonian_type, "__name__", "Custom Hamiltonian")
@@ -514,6 +575,22 @@ def plot_variance_benchmark(
             zorder=1
         )
 
+    # Optional: overlay the A*n*b^(-n) Haar fit stored in results["fits"] (see add_decay_fits).
+    # Uncomment to draw it on the figure.
+    # for key, color, name in (("haar", "#D81B60", "Haar"),):
+    #     fit = (results.get("fits") or {}).get(key)
+    #     if fit:
+    #         xs = np.linspace(fit["n_min"], qubits.max(), 200)
+    #         ax.plot(
+    #             xs,
+    #             fit["A"] * xs * fit["b"] ** (-xs),
+    #             linestyle=":",
+    #             linewidth=2.5,
+    #             color=color,
+    #             label=rf"{name} fit: ${fit['A']:.3g}\,n\,({fit['b']:.3g})^{{-n}}$ ($n\geq{fit['n_min']}$)",
+    #             zorder=5,
+    #         )
+
     is_mean_var = results.get("metric", "") == "mean_param_var"
     is_norm_sq = results.get("metric", "") == "grad_norm_sq"
     ham_title = results.get("hamiltonian_name", "1D Model")
@@ -547,6 +624,8 @@ def plot_variance_benchmark(
         p_spec = str(results.get("param_idx_spec", "0"))
         if p_spec.lower() in ["mid", "middle"]:
             param_label = r"\partial_{\mathrm{mid}} C \ (\mathrm{Layer\ } n, \ \mathrm{Wire\ } \lfloor n/2 \rfloor)"
+        elif p_spec.isdigit():
+            param_label = rf"\partial_{{\theta_{{{int(p_spec) + 1}}}}} C"
         else:
             param_label = rf"\partial_{{{p_spec}}} C"
 
