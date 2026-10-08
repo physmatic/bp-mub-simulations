@@ -5,9 +5,9 @@ import numpy as np
 import pennylane as qml
 
 
-from mub.ansatz import hardware_efficient_ansatz, get_num_hea_params
-from mub.hamiltonians import build_tfim_hamiltonian
-from mub.benchmark import (
+from src.ansatz import hardware_efficient_ansatz, get_num_hea_params
+from src.hamiltonians import build_tfim_hamiltonian
+from src.benchmark import (
     evaluate_single_param_shift,
     run_variance_benchmark,
     plot_variance_benchmark,

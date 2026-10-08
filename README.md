@@ -3,7 +3,7 @@
 ## Layout
 
 ```
-mub/        importable package (circuits, Hamiltonians, ansatz, benchmark, experiments registry)
+src/        importable package (circuits, Hamiltonians, ansatz, benchmark, experiments registry)
 scripts/    command-line entry points
 tests/      pytest suite
 outputs/    generated JSON / PDF results
@@ -18,7 +18,7 @@ pip install -r requirements.txt && pip install -e .
 
 ## Experiments
 
-Named parameter sets live in `mub/experiments.py`, each with a comment describing it
+Named parameter sets live in `src/experiments.py`, each with a comment describing it
 (including **GOOD PARAMS**, the all-to-all DM run). Run them with:
 
 ```

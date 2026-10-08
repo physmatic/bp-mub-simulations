@@ -13,7 +13,7 @@ import numpy as np
 import pennylane as qml
 
 
-from mub import (
+from src import (
     sample_mub_basis_and_state,
     prepare_mub_state,
     get_mub_statevector,

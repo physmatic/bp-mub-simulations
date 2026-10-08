@@ -14,7 +14,7 @@ import numpy as np
 
 # Ensure project modules are importable
 
-from mub.generate_mubs import generate_mubs
+from src.generate_mubs import generate_mubs
 
 
 def test_3qubit_mubs_deterministic_overlaps():

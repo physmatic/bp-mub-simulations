@@ -10,8 +10,8 @@ from typing import Dict, List
 import numpy as np
 
 
-from mub.mub_circuit import mub_circuit
-from mub.pauli_generator import generate_pauli_sets
+from src.mub_circuit import mub_circuit
+from src.pauli_generator import generate_pauli_sets
 
 from qiskit.quantum_info import Statevector, Pauli
 

@@ -5,9 +5,9 @@ import pennylane as qml
 
 # Ensure project modules are importable
 
-from mub.hamiltonians import build_tfim_hamiltonian
-from mub.mub_weights import compute_mub_weights, format_basis_name
-from mub.pauli_to_j import p_to_j
+from src.hamiltonians import build_tfim_hamiltonian
+from src.mub_weights import compute_mub_weights, format_basis_name
+from src.pauli_to_j import p_to_j
 
 
 def test_tfim_term_count():

@@ -5,8 +5,8 @@ import pennylane as qml
 
 # Ensure project modules are importable
 
-from mub.pauli_to_j import p_to_j
-from mub.mub_weights import compute_mub_weights, op_to_pauli_str
+from src.pauli_to_j import p_to_j
+from src.mub_weights import compute_mub_weights, op_to_pauli_str
 
 
 def test_op_to_pauli_str():

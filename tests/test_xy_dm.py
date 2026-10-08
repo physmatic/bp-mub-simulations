@@ -4,18 +4,18 @@ import numpy as np
 import pennylane as qml
 
 
-from mub.hamiltonians import (
+from src.hamiltonians import (
     build_tfim_hamiltonian,
     build_xy_dm_hamiltonian,
     build_all_to_all_dm_hamiltonian,
 )
-from mub.mub_weights import (
+from src.mub_weights import (
     compute_mub_weights,
     count_active_stabilizer_sets,
     get_active_stabilizer_sets,
     format_basis_name,
 )
-from mub.pauli_to_j import p_to_j
+from src.pauli_to_j import p_to_j
 
 
 def test_xy_dm_term_counts():

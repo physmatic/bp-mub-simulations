@@ -3,13 +3,13 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mub"
+name = "src"
 version = "0.1.0"
 description = "MUB-based initialization benchmarks for barren plateaus"
 requires-python = ">=3.9"
 
 [tool.setuptools]
-packages = ["mub"]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

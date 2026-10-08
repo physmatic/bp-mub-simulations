@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 
-from mub.benchmark import (
+from src.benchmark import (
     run_variance_benchmark,
     plot_variance_benchmark,
 )

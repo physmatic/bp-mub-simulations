@@ -1,4 +1,4 @@
-"""Run named benchmark experiments defined in mub/experiments.py.
+"""Run named benchmark experiments defined in src/experiments.py.
 
 Usage:
     python scripts/run_experiments.py              # run all experiments
@@ -14,8 +14,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from mub.experiments import EXPERIMENTS  # noqa: E402
-from mub.benchmark import (  # noqa: E402
+from src.experiments import EXPERIMENTS  # noqa: E402
+from src.benchmark import (  # noqa: E402
     add_decay_fits,
     plot_variance_benchmark,
     run_variance_benchmark,

@@ -5,7 +5,7 @@ Delegates to mub/pauli_to_j.py.
 """
 
 
-from mub.pauli_to_j import (
+from src.pauli_to_j import (
     pauli_to_xz,
     solve_j,
     p_to_j,

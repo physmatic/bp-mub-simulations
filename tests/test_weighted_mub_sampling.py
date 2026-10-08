@@ -29,9 +29,9 @@ import pennylane as qml
 
 # Ensure project modules are importable
 
-from mub.pauli_to_j import p_to_j
-from mub.mub_weights import compute_mub_weights, format_basis_name, op_to_pauli_str
-from mub.state_preparation import (
+from src.pauli_to_j import p_to_j
+from src.mub_weights import compute_mub_weights, format_basis_name, op_to_pauli_str
+from src.state_preparation import (
     sample_mub_basis_and_state,
     get_mub_statevector,
 )
