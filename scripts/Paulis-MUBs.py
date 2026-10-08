@@ -5,23 +5,13 @@ Evaluates the exact correspondence between the (2^n + 1) MUB bases
 and the (2^n + 1) maximal commuting Pauli stabilizer sets.
 """
 
-import sys
-from pathlib import Path
 import itertools
 from typing import Dict, List
 import numpy as np
 
-# Ensure project modules can be imported
-PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-try:
-    from src.MUB_Circuits_generator.mub_circuit import mub_circuit
-    from src.MUB_Circuits_generator.pauli_generator import generate_pauli_sets
-except ImportError:
-    from mub_circuit import mub_circuit
-    from pauli_generator import generate_pauli_sets
+from mub.mub_circuit import mub_circuit
+from mub.pauli_generator import generate_pauli_sets
 
 from qiskit.quantum_info import Statevector, Pauli
 

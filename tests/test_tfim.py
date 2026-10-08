@@ -1,18 +1,13 @@
 """Unit tests for the 1D TFIM Hamiltonian generator and MUB weight integration."""
 
-import sys
-from pathlib import Path
 import numpy as np
 import pennylane as qml
 
 # Ensure project modules are importable
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.hamiltonians import build_tfim_hamiltonian
-from src.MUB_Circuits_generator.mub_weights import compute_mub_weights, format_basis_name
-from src.MUB_Circuits_generator.pauli_to_j import p_to_j
+from mub.hamiltonians import build_tfim_hamiltonian
+from mub.mub_weights import compute_mub_weights, format_basis_name
+from mub.pauli_to_j import p_to_j
 
 
 def test_tfim_term_count():

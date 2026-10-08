@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 import time
 import random
 import itertools
@@ -7,18 +6,8 @@ from typing import Optional, Union, Tuple
 import numpy as np
 import pennylane as qml
 
-# Ensure project modules can be imported
-CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parent.parent
-sys.path.insert(0, str(CURRENT_DIR))
-sys.path.insert(0, str(PROJECT_ROOT))
-
-try:
-    from .mub_circuit import mub_circuit, mub_unitary, compute_field_trace, _gf2_multiply
-    from .consts import IRREDUCIBLE_POLYS
-except ImportError:
-    from mub_circuit import mub_circuit, mub_unitary, compute_field_trace, _gf2_multiply
-    from consts import IRREDUCIBLE_POLYS
+from .mub_circuit import mub_circuit, mub_unitary, compute_field_trace, _gf2_multiply
+from .consts import IRREDUCIBLE_POLYS
 
 
 

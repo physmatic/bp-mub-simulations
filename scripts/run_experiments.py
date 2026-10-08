@@ -1,10 +1,10 @@
-"""Run named benchmark experiments defined in experiments.py.
+"""Run named benchmark experiments defined in mub/experiments.py.
 
 Usage:
-    python run_experiments.py              # run all experiments
-    python run_experiments.py tfim         # run only the named ones
-    python run_experiments.py --list       # list available experiments
-    python run_experiments.py --refit ising_theta1   # re-fit/re-plot from saved JSON (no re-run)
+    python scripts/run_experiments.py              # run all experiments
+    python scripts/run_experiments.py tfim         # run only the named ones
+    python scripts/run_experiments.py --list       # list available experiments
+    python scripts/run_experiments.py --refit ising_theta1   # re-fit/re-plot from saved JSON (no re-run)
 """
 
 import argparse
@@ -12,12 +12,10 @@ import json
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from experiments import EXPERIMENTS  # noqa: E402
-from src.MUB_Circuits_generator.benchmark import (  # noqa: E402
+from mub.experiments import EXPERIMENTS  # noqa: E402
+from mub.benchmark import (  # noqa: E402
     add_decay_fits,
     plot_variance_benchmark,
     run_variance_benchmark,

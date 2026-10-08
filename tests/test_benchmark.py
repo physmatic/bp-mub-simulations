@@ -1,17 +1,13 @@
 """Unit tests for HEA ansatz and variance benchmark engine."""
 
-import sys
 from pathlib import Path
 import numpy as np
 import pennylane as qml
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.ansatz import hardware_efficient_ansatz, get_num_hea_params
-from src.MUB_Circuits_generator.hamiltonians import build_tfim_hamiltonian
-from src.MUB_Circuits_generator.benchmark import (
+from mub.ansatz import hardware_efficient_ansatz, get_num_hea_params
+from mub.hamiltonians import build_tfim_hamiltonian
+from mub.benchmark import (
     evaluate_single_param_shift,
     run_variance_benchmark,
     plot_variance_benchmark,

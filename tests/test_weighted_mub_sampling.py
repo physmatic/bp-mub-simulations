@@ -23,20 +23,15 @@ All 9 non-X, non-Z stabilizers are included with equal coefficient magnitude |c|
   - Basis inf (pure Z): 0 terms      -> w_inf = 0/9 = 0
 """
 
-import sys
-from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 import numpy as np
 import pennylane as qml
 
 # Ensure project modules are importable
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.pauli_to_j import p_to_j
-from src.MUB_Circuits_generator.mub_weights import compute_mub_weights, format_basis_name, op_to_pauli_str
-from src.MUB_Circuits_generator.state_preparation import (
+from mub.pauli_to_j import p_to_j
+from mub.mub_weights import compute_mub_weights, format_basis_name, op_to_pauli_str
+from mub.state_preparation import (
     sample_mub_basis_and_state,
     get_mub_statevector,
 )

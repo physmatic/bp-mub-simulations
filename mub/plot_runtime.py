@@ -1,10 +1,15 @@
 import time
 import random
 
-import mub_circuit
+import importlib
 from typing import Callable, List
 
 from matplotlib import pyplot as plt
+
+
+# The package re-exports the `mub_circuit` function under the same name as its module,
+# so load the module explicitly.
+mub_circuit = importlib.import_module(".mub_circuit", __package__)
 
 
 def plot_runtime(func: Callable[[int], None], ns: List[int]) -> None:

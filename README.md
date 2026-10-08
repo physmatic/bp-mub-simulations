@@ -1,14 +1,30 @@
 # bp-mub-simulations
 
+## Layout
+
+```
+mub/        importable package (circuits, Hamiltonians, ansatz, benchmark, experiments registry)
+scripts/    command-line entry points
+tests/      pytest suite
+outputs/    generated JSON / PDF results
+```
+
+## Setup
+
+```
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pip install -e .
+```
+
 ## Experiments
 
-Named parameter sets live in `experiments.py`, each with a comment describing it
+Named parameter sets live in `mub/experiments.py`, each with a comment describing it
 (including **GOOD PARAMS**, the all-to-all DM run). Run them with:
 
 ```
-python run_experiments.py           # all experiments
-python run_experiments.py tfim      # only the named ones
-python run_experiments.py --list    # list available experiments
+python scripts/run_experiments.py           # all experiments
+python scripts/run_experiments.py tfim      # only the named ones
+python scripts/run_experiments.py --list    # list available experiments
 ```
 
 Each experiment writes `outputs/<name>.json` and `outputs/<name>.pdf`.

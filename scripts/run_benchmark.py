@@ -5,15 +5,10 @@ Hamiltonian-Weighted MUB Ensembles vs. Standard Haar Initialization.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
-# Ensure project modules are in sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.benchmark import (
+from mub.benchmark import (
     run_variance_benchmark,
     plot_variance_benchmark,
 )

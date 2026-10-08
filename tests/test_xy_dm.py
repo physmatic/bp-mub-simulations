@@ -1,26 +1,21 @@
 """Unit tests for the 1D Transverse-Field XY Model with DM interaction and stabilizer counting."""
 
-import sys
-from pathlib import Path
 import numpy as np
 import pennylane as qml
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.hamiltonians import (
+from mub.hamiltonians import (
     build_tfim_hamiltonian,
     build_xy_dm_hamiltonian,
     build_all_to_all_dm_hamiltonian,
 )
-from src.MUB_Circuits_generator.mub_weights import (
+from mub.mub_weights import (
     compute_mub_weights,
     count_active_stabilizer_sets,
     get_active_stabilizer_sets,
     format_basis_name,
 )
-from src.MUB_Circuits_generator.pauli_to_j import p_to_j
+from mub.pauli_to_j import p_to_j
 
 
 def test_xy_dm_term_counts():

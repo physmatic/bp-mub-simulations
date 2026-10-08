@@ -10,16 +10,11 @@ For all pairs (j, l) of bases and states (i, k):
   - If j != l:             P == 1/d
 """
 
-import sys
-from pathlib import Path
 import numpy as np
 
 # Ensure project modules are importable
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.generate_mubs import generate_mubs
+from mub.generate_mubs import generate_mubs
 
 
 def test_3qubit_mubs_deterministic_overlaps():

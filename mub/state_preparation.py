@@ -11,10 +11,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 import numpy as np
 import pennylane as qml
 
-try:
-    from .mub_circuit import mub_circuit, mub_unitary
-except ImportError:
-    from mub_circuit import mub_circuit, mub_unitary
+from .mub_circuit import mub_circuit, mub_unitary
 
 
 def sample_mub_basis_and_state(

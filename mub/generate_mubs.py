@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 import io
 import itertools
 import math
@@ -11,14 +10,7 @@ from matplotlib import pyplot as plt
 import pennylane as qml
 
 # Ensure project modules can be imported
-CURRENT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(CURRENT_DIR))
-sys.path.insert(0, str(CURRENT_DIR.parent.parent))
-
-try:
-    from .mub_circuit import QUBIT_NUM, mub_circuit, mub_unitary
-except ImportError:
-    from mub_circuit import QUBIT_NUM, mub_circuit, mub_unitary
+from .mub_circuit import QUBIT_NUM, mub_circuit, mub_unitary
 
 
 

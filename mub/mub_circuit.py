@@ -2,10 +2,7 @@ from typing import List, Tuple, Sequence, Optional
 import numpy as np
 import pennylane as qml
 
-try:
-    from .consts import IRREDUCIBLE_POLYS, QUBIT_NUM
-except ImportError:
-    from consts import IRREDUCIBLE_POLYS, QUBIT_NUM
+from .consts import IRREDUCIBLE_POLYS, QUBIT_NUM
 
 def to_base_p(x: int, p: int, n: int) -> np.ndarray:
     digits = []

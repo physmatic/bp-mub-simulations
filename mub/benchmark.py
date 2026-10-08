@@ -20,18 +20,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-try:
-    from .ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
-    from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
-    from .pauli_to_j import p_to_j
-    from .state_preparation import sample_mub_basis_and_state, prepare_mub_state
-except ImportError:
-    from ansatz import hardware_efficient_ansatz, get_num_hea_params
-    from hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
-    from mub_weights import compute_mub_weights, count_active_stabilizer_sets
-    from pauli_to_j import p_to_j
-    from state_preparation import sample_mub_basis_and_state, prepare_mub_state
+from .ansatz import hardware_efficient_ansatz, get_num_hea_params
+from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
+from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
+from .pauli_to_j import p_to_j
+from .state_preparation import sample_mub_basis_and_state, prepare_mub_state
 
 
 def evaluate_single_param_shift(

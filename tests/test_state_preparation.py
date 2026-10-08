@@ -9,17 +9,11 @@ Tests:
 5. Error handling for invalid eigenstate indices, wires, and empty weights.
 """
 
-import sys
-from pathlib import Path
 import numpy as np
 import pennylane as qml
 
-# Ensure src is in sys.path
-SRC_DIR = Path(__file__).resolve().parent.parent / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
-from MUB_Circuits_generator import (
+from mub import (
     sample_mub_basis_and_state,
     prepare_mub_state,
     get_mub_statevector,

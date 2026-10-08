@@ -1,17 +1,12 @@
 """Unit tests for Hamiltonian-to-MUB weight mapping."""
 
-import sys
-from pathlib import Path
 import numpy as np
 import pennylane as qml
 
 # Ensure project modules are importable
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src" / "MUB_Circuits_generator"))
 
-from src.MUB_Circuits_generator.pauli_to_j import p_to_j
-from src.MUB_Circuits_generator.mub_weights import compute_mub_weights, op_to_pauli_str
+from mub.pauli_to_j import p_to_j
+from mub.mub_weights import compute_mub_weights, op_to_pauli_str
 
 
 def test_op_to_pauli_str():
