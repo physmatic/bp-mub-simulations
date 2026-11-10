@@ -2,7 +2,10 @@
 Cost Derivative Variance Benchmark.
 
 Compares the variance of cost function derivatives Var[∂_k C] between:
-1. Standard Haar random initialization (uniform angles θ ~ [0, 2π)^P starting in |0...0>)
+1. Random-parameter initialization (uniform angles θ ~ [0, 2π)^P starting in |0...0>).
+   Internally and in the JSON outputs this arm is still called "haar" (haar_var, ...)
+   for compatibility with older results, but it is NOT Haar-random: it only
+   approximates a 2-design when the ansatz is expressive and deep enough.
 2. Hamiltonian-Weighted MUB Ensemble initialization (starting in |psi_k^j> = U(j)|k> with
    (j, k) sampled according to w_j and Uniform(0, 2^n - 1), evaluated at θ = 0).
 
@@ -20,7 +23,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from .ansatz import hardware_efficient_ansatz, get_num_hea_params
+from .ansatz import hardware_efficient_ansatz, get_num_hea_params, params_per_qubit
 from .hamiltonians import build_tfim_hamiltonian, build_xy_dm_hamiltonian, build_all_to_all_dm_hamiltonian, build_ising_hamiltonian
 from .mub_weights import compute_mub_weights, count_active_stabilizer_sets
 from .pauli_to_j import p_to_j
@@ -157,7 +160,8 @@ def run_variance_benchmark(
     device_name: str = "auto",
     param_idx: Union[int, str, Callable[[int, int], int]] = "mid",
     seed: int = 42,
-    verbose: bool = True
+    verbose: bool = True,
+    gate_set: str = "ryrz",
 ) -> Dict[str, Union[List[int], List[float], Dict]]:
     """
     Sweeps over qubit counts and computes empirical variance of cost function
@@ -196,6 +200,16 @@ def run_variance_benchmark(
         Random seed for reproducibility.
     verbose : bool
         Whether to print progress during benchmarking.
+    gate_set : str, default="ryrz"
+        HEA rotation block, "ryrz" or "ry" (legacy; see src/ansatz.py for why "ry" is
+        not expressive enough to show barren plateaus).
+
+    Notes
+    -----
+    Randomness is seeded per qubit count, rng = default_rng([seed, n]), with a separate
+    generator for the bootstrap error bars. Results for a given n therefore do not
+    depend on which other n values are in qubits_list, so runs over disjoint qubit
+    ranges can be merged.
 
     Returns
     -------
@@ -237,7 +251,6 @@ def run_variance_benchmark(
 
     is_mean_var = metric.lower() in ["mean_param_var", "mean_var", "mean", "grad_mean_var", "default"]
     is_norm_sq = metric.lower() in ["grad_norm_sq", "norm_sq", "norm2", "grad_norm2"]
-    rng = np.random.default_rng(seed)
 
     actual_metric = "mean_param_var" if is_mean_var else ("grad_norm_sq" if is_norm_sq else "single_param")
 
@@ -261,6 +274,8 @@ def run_variance_benchmark(
         "evaluated_param_indices": {},
         "hamiltonian_name": ham_name,
         "layers_factor": layers_factor,
+        "gate_set": gate_set,
+        "seed": seed,
         "haar_var": [],
         "haar_var_err": [],
         "haar_mean": [],
@@ -273,22 +288,22 @@ def run_variance_benchmark(
 
     if is_mean_var:
         metric_name = "(1/P) sum Var[∂_k C]"
-        col_header = "Haar Var ± SE"
+        col_header = "Rand Var ± SE"
         col_header_mub = "MUB Var ± SE"
     elif is_norm_sq:
         metric_name = "Var[||∇C||^2]"
-        col_header = "Haar Var ± SE"
+        col_header = "Rand Var ± SE"
         col_header_mub = "MUB Var ± SE"
     else:
         metric_name = f"Var[∂_k C] ({param_idx})"
-        col_header = "Haar Var ± SE"
+        col_header = "Rand Var ± SE"
         col_header_mub = "MUB Var ± SE"
 
     if verbose:
         print("=" * 95)
-        print(f" COST GRADIENT VARIANCE BENCHMARK: MUB ENSEMBLE vs. HAAR INITIALIZATION")
+        print(f" COST GRADIENT VARIANCE BENCHMARK: MUB ENSEMBLE vs. RANDOM-PARAMETER INITIALIZATION")
         print(f" Hamiltonian: {ham_name}")
-        print(f" Device: {resolved_dev} | Diff Method: {diff_method} | Depth: L = {layers_factor}n | Samples: {num_samples}")
+        print(f" Device: {resolved_dev} | Diff Method: {diff_method} | Depth: L = {layers_factor}n | Gates: {gate_set} | Samples: {num_samples}")
         print("=" * 95)
         print(f"{'n':<4} | {'L':<4} | {'Params':<6} | {'Active':<7} | {col_header:<22} | {col_header_mub:<22} | {'Time (s)':<8}")
         print("-" * 95)
@@ -296,8 +311,10 @@ def run_variance_benchmark(
     for n in qubits_list:
         t0 = time.time()
         layers = layers_fn(n)
-        num_p = get_num_hea_params(n, layers)
+        num_p = get_num_hea_params(n, layers, gate_set)
         wires = list(range(n))
+        rng = np.random.default_rng([seed, n])
+        boot_rng = np.random.default_rng([seed, n, 1])
 
         H = ham_builder(n, wires)
         weights = compute_mub_weights(H, p_to_j, wires=wires)
@@ -309,7 +326,7 @@ def run_variance_benchmark(
             # 1. Haar Initialization: evaluate full gradient vectors
             @qml.qnode(dev, diff_method=diff_method)
             def haar_circuit(p):
-                hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                 return qml.expval(H)
 
             grad_haar_fn = qml.grad(haar_circuit)
@@ -322,7 +339,7 @@ def run_variance_benchmark(
             haar_grads = np.array(haar_grads)  # shape (num_samples, num_p)
             haar_param_vars = np.var(haar_grads, axis=0, ddof=1)  # shape (num_p,)
             h_var = float(np.mean(haar_param_vars))
-            h_var_err = compute_bootstrap_variance_error(haar_grads, is_vector=True, rng=rng)
+            h_var_err = compute_bootstrap_variance_error(haar_grads, is_vector=True, rng=boot_rng)
             h_mean = float(np.mean(haar_grads))
 
             # 2. MUB Initialization: evaluate full gradient vectors
@@ -334,7 +351,7 @@ def run_variance_benchmark(
                 @qml.qnode(dev, diff_method=diff_method)
                 def mub_circuit(p, _j=j, _k=k):
                     prepare_mub_state(n, _j, _k, wires=wires)
-                    hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                    hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                     return qml.expval(H)
 
                 g = qml.grad(mub_circuit)(p0)
@@ -343,7 +360,7 @@ def run_variance_benchmark(
             mub_grads = np.array(mub_grads)  # shape (num_samples, num_p)
             mub_param_vars = np.var(mub_grads, axis=0, ddof=1)  # shape (num_p,)
             m_var = float(np.mean(mub_param_vars))
-            m_var_err = compute_bootstrap_variance_error(mub_grads, is_vector=True, rng=rng)
+            m_var_err = compute_bootstrap_variance_error(mub_grads, is_vector=True, rng=boot_rng)
             m_mean = float(np.mean(mub_grads))
 
             details_entry = {
@@ -359,7 +376,7 @@ def run_variance_benchmark(
             # 1. Haar Initialization - Full gradient norm squared
             @qml.qnode(dev, diff_method=diff_method)
             def haar_circuit(p):
-                hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                 return qml.expval(H)
 
             grad_haar_fn = qml.grad(haar_circuit)
@@ -371,7 +388,7 @@ def run_variance_benchmark(
 
             haar_vals = np.array(haar_vals)
             h_var = float(np.var(haar_vals, ddof=1))
-            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=rng)
+            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=boot_rng)
             h_mean = float(np.mean(haar_vals))
 
             # 2. MUB Initialization - Full gradient norm squared
@@ -383,7 +400,7 @@ def run_variance_benchmark(
                 @qml.qnode(dev, diff_method=diff_method)
                 def mub_circuit(p, _j=j, _k=k):
                     prepare_mub_state(n, _j, _k, wires=wires)
-                    hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                    hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                     return qml.expval(H)
 
                 g = qml.grad(mub_circuit)(p0)
@@ -391,7 +408,7 @@ def run_variance_benchmark(
 
             mub_vals = np.array(mub_vals)
             m_var = float(np.var(mub_vals, ddof=1))
-            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=rng)
+            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=boot_rng)
             m_mean = float(np.mean(mub_vals))
 
             details_entry = {
@@ -408,7 +425,7 @@ def run_variance_benchmark(
             if isinstance(param_idx, str) and param_idx.lower() in ["mid", "middle"]:
                 mid_layer = layers // 2
                 mid_wire = n // 2
-                actual_k = mid_layer * n + mid_wire
+                actual_k = (mid_layer * n + mid_wire) * params_per_qubit(gate_set)  # Ry of that qubit
             elif callable(param_idx):
                 actual_k = int(param_idx(n, layers))
             else:
@@ -420,7 +437,7 @@ def run_variance_benchmark(
 
             @qml.qnode(dev)
             def haar_circuit(p):
-                hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                 return qml.expval(H)
 
             haar_vals = []
@@ -431,7 +448,7 @@ def run_variance_benchmark(
 
             haar_vals = np.array(haar_vals)
             h_var = float(np.var(haar_vals, ddof=1))
-            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=rng)
+            h_var_err = compute_bootstrap_variance_error(haar_vals, is_vector=False, rng=boot_rng)
             h_mean = float(np.mean(haar_vals))
 
             p0 = np.zeros(num_p, dtype=float)
@@ -442,7 +459,7 @@ def run_variance_benchmark(
                 @qml.qnode(dev)
                 def mub_circuit(p, _j=j, _k=k):
                     prepare_mub_state(n, _j, _k, wires=wires)
-                    hardware_efficient_ansatz(p, wires=wires, layers=layers)
+                    hardware_efficient_ansatz(p, wires=wires, layers=layers, gate_set=gate_set)
                     return qml.expval(H)
 
                 grad_val = evaluate_single_param_shift(mub_circuit, p0, param_idx=actual_k)
@@ -450,7 +467,7 @@ def run_variance_benchmark(
 
             mub_vals = np.array(mub_vals)
             m_var = float(np.var(mub_vals, ddof=1))
-            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=rng)
+            m_var_err = compute_bootstrap_variance_error(mub_vals, is_vector=False, rng=boot_rng)
             m_mean = float(np.mean(mub_vals))
 
             details_entry = {
@@ -552,7 +569,7 @@ def plot_variance_benchmark(
         linewidth=2.2,
         color="#D81B60",
         linestyle="--",
-        label=r"$\mathbf{Haar\ Random}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
+        label=r"$\mathbf{Random\ init}$: $|0\dots0\rangle, \, \vec{\theta} \sim [0, 2\pi)^P$",
         zorder=3
     )
     if haar_err is not None and np.any(haar_err > 0):
@@ -564,7 +581,7 @@ def plot_variance_benchmark(
             haar_upper,
             color="#D81B60",
             alpha=0.25,
-            label=r"$\mathrm{Haar\ 95\%\ CI\ (\pm 1.96\ \mathrm{SE})}$",
+            label=r"$\mathrm{Random\ 95\%\ CI\ (\pm 1.96\ \mathrm{SE})}$",
             zorder=1
         )
 
@@ -588,6 +605,7 @@ def plot_variance_benchmark(
     is_norm_sq = results.get("metric", "") == "grad_norm_sq"
     ham_title = results.get("hamiltonian_name", "1D Model")
     lf = results.get("layers_factor", 2)
+    gates = {"ry": "Ry+CZ", "ryrz": "RyRz+CZ"}.get(results.get("gate_set", "ry"), results.get("gate_set"))
 
     ax.set_yscale("log")
     ax.set_xlabel(r"Number of Qubits ($n$)", fontsize=13, fontweight="bold")
@@ -599,7 +617,7 @@ def plot_variance_benchmark(
         ax.set_title(
             f"VQE Mean Cost Derivative Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth ${depth_str}$, $(1/P) \\sum \\mathrm{{Var}}[\\partial_k C]$ ($N={results.get('num_samples', 1000)}$ samples)",
+            f"HEA ({gates}) Depth ${depth_str}$, $(1/P) \\sum \\mathrm{{Var}}[\\partial_k C]$ ($N={results.get('num_samples', 1000)}$ samples)",
             fontsize=11,
             pad=10
         )
@@ -608,7 +626,7 @@ def plot_variance_benchmark(
         ax.set_title(
             f"VQE Squared Gradient Norm Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth ${depth_str}$, $\\mathrm{{Var}}[\\|\\nabla C\\|^2]$ ($N={results.get('num_samples', 1000)}$ samples)",
+            f"HEA ({gates}) Depth ${depth_str}$, $\\mathrm{{Var}}[\\|\\nabla C\\|^2]$ ($N={results.get('num_samples', 1000)}$ samples)",
             fontsize=11,
             pad=10
         )
@@ -625,7 +643,7 @@ def plot_variance_benchmark(
         ax.set_title(
             f"VQE Cost Derivative Variance vs. System Size $n$\n"
             f"{ham_title}\n"
-            f"HEA Depth ${depth_str}$, Parameter ${param_label}$",
+            f"HEA ({gates}) Depth ${depth_str}$, Parameter ${param_label}$",
             fontsize=11,
             pad=10
         )
