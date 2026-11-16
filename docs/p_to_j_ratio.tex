@@ -1,0 +1,221 @@
+\documentclass[11pt]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Tr}{\operatorname{Tr}}
+\newcommand{\vx}{\vec{x}}
+\newcommand{\vz}{\vec{z}}
+
+\title{Finding the MUB of a Pauli string in $\mathcal{O}(n^2)$:\\ the Galois-ratio rule for our circuit construction}
+\author{Omer Gurevich}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+For our trace-based MUB circuits, the basis that stabilizes a Pauli string $P=(\vx,\vz)$ is
+\[
+  j \;=\; \bigl[G^{-1}\vz\bigr]\oslash[\vx], \qquad j=\infty \text{ if } \vx=0,
+\]
+where $[\cdot]$ reads a bit vector as an element of $GF(2^n)$ in the polynomial basis, $\oslash$ is field division, and $G_{st}=\Tr(\alpha^{s+t})$ is the Gram (Hankel) matrix of the trace form.
+The matrix $G^{-1}$ converts $\vz$ from the trace-dual basis, in which our circuits produce it, to the polynomial basis.
+The rule replaces the Gaussian elimination we currently solve for each Pauli ($\mathcal{O}(n^3)$) by one field inversion and one multiplication ($\mathcal{O}(n^2)$).
+It agrees with the existing implementation on every Pauli string for $n\le 6$ and on random samples up to $n=16$.
+\end{abstract}
+
+\section{Setup and conventions}
+
+\paragraph{Pauli strings.}
+An $n$-qubit Pauli string is written, up to phase, as $P\propto \bigotimes_{t=0}^{n-1} X^{x_t}Z^{z_t}$ with $\vx,\vz\in\F_2^n$.
+This is the standard binary symplectic representation of the Pauli group~\cite{Gottesman1997,AaronsonGottesman2004}. Qubit (wire) $t$ carries bit $t$; in string form, character $t$ of \texttt{"YZX"} acts on wire $t$.
+
+\paragraph{The field.}
+Fix an irreducible polynomial $f$ of degree $n$ over $\F_2$ and a root $\alpha$, so $GF(2^n)=\F_2[\alpha]$ with polynomial basis $\{1,\alpha,\dots,\alpha^{n-1}\}$.
+A bit vector $\vec v\in\F_2^n$ is identified with the field element $[\vec v]\equiv\sum_t v_t\alpha^t$.
+In the code this is the integer whose bit $t$ is $v_t$.
+The basis label $j=\sum_k j_k2^k$ is identified with $\eta\equiv\sum_k j_k\alpha^k$.
+
+\begin{definition}[Field division]\label{def:division}
+Let $\odot$ denote multiplication in $GF(2^n)$; we also write $ab$ for $a\odot b$.
+For $b\neq 0$, the inverse $b^{-1}$ is the unique element of $GF(2^n)$ with $b\odot b^{-1}=1$; it exists because every non-zero element of a field is invertible.
+For $a,b\in GF(2^n)$ with $b\neq 0$, the division of $a$ by $b$ is
+\[
+  a\oslash b\;\equiv\;a\odot b^{-1}.
+\]
+\end{definition}
+$\Tr:GF(2^n)\to\F_2$ is the absolute trace, $\Tr(\beta)=\sum_{i=0}^{n-1}\beta^{2^i}$; it is $\F_2$-linear~\cite[Ch.~2]{lidl1997finite}.
+
+\paragraph{Stabilizer sets of our MUBs.}
+Complete sets of $2^n+1$ MUBs for $n$ qubits are built from $GF(2^n)$~\cite{Wootters1989,Bandyopadhyay2002,Lawrence2002,Klappenecker2004constructions,Durt2010}, and Clifford circuits of the form $-H-S-CZ-$ that prepare them were given in~\cite{Zhang2023ShadowMUB,WuWang2024}.
+For our circuits $U(j)$ ($H^{\otimes n}$, then $S^{a_t}$, then $CZ$ gates with Hankel pattern), basis $j\neq\infty$ is stabilized exactly by the Pauli strings
+\begin{equation}\label{eq:stab}
+  \mathcal{S}_j=\bigl\{(\vx,\; M(j)\,\vx)\;:\;\vx\neq 0\bigr\},\qquad
+  M(j)=\sum_{k=0}^{n-1} j_k M^{(k)},\qquad
+  M^{(k)}_{st}=\Tr\!\left(\alpha^{s+t+k}\right).
+\end{equation}
+The computational basis $j=\infty$ is stabilized by the $Z$-type strings $(0,\vz)$, $\vz\neq0$.
+This is the content of the Pauli Group Partitioning lemma in the manuscript, and it is what \texttt{src/pauli\_to\_j.py} uses.
+The current inversion $P\mapsto j$ solves $\vz=\sum_k j_k M^{(k)}\vx$ for the bits $j_k$ by Gaussian elimination over $\F_2$, which costs $\mathcal{O}(n^3)$ for each Pauli.
+
+\section{The ratio rule}
+
+The key observation is that $\vz=M(j)\vx$ is a field multiplication written in a mixed pair of bases.
+
+\begin{lemma}[Trace coordinates]\label{lem:trace}
+For $\beta\in GF(2^n)$ define its trace-coordinate vector $\tau(\beta)\in\F_2^n$ by $\tau(\beta)_s=\Tr(\alpha^s\beta)$.
+Then $\tau(\beta)=G\,\vec\beta$, where $\vec\beta$ are the polynomial-basis coordinates of $\beta$ and
+\[
+  G_{st}=\Tr\!\left(\alpha^{s+t}\right)=M^{(0)}_{st}.
+\]
+$G$ is invertible, and $G^{-1}$ maps trace coordinates back to polynomial coordinates.
+Equivalently, $\tau(\beta)$ are the coordinates of $\beta$ in the \emph{trace-dual basis} $\{\beta_0,\dots,\beta_{n-1}\}$, defined by $\Tr(\alpha^s\beta_t)=\delta_{st}$.
+The polynomial coordinates of $\beta_t$ form column $t$ of $G^{-1}$.
+\end{lemma}
+
+\begin{proof}
+By linearity of the trace, $\Tr(\alpha^s\beta)=\sum_t \beta_t\Tr(\alpha^{s+t})=(G\vec\beta)_s$.
+The trace form $(a,b)\mapsto\Tr(ab)$ is non-degenerate on $GF(2^n)$~\cite[Ch.~2]{lidl1997finite}, so $\tau$ is injective and $G$ is invertible.
+For the dual basis, $\tau(\beta_t)_s=\Tr(\alpha^s\beta_t)=\delta_{st}$, so $\tau\!\left(\sum_t z_t\beta_t\right)=\vz$.
+\end{proof}
+
+\begin{theorem}[Galois-ratio rule]\label{thm:ratio}
+Let $P=(\vx,\vz)$ be a non-identity Pauli string.
+If $\vx=0$, then $P\in\mathcal{S}_\infty$.
+Otherwise $P\in\mathcal{S}_j$ for the unique $j$ with
+\begin{equation}\label{eq:ratio}
+  \eta \;=\; \zeta\oslash\xi,\qquad \xi\equiv[\vx],\qquad \zeta\equiv[G^{-1}\vz]=\sum_t z_t\beta_t .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Let $\vx\neq 0$ and $\eta$ be the field element of $j$.
+Exchanging the order of the two sums and using linearity of the trace,
+\[
+  \bigl(M(j)\vx\bigr)_s=\sum_{k,t} j_k\,\Tr\!\left(\alpha^{s+t+k}\right)x_t
+  =\Tr\!\Bigl(\alpha^s\underbrace{\textstyle\sum_k j_k\alpha^k}_{\eta}\;\underbrace{\textstyle\sum_t x_t\alpha^t}_{\xi}\Bigr)
+  =\tau(\eta\xi)_s .
+\]
+So by \eqref{eq:stab}, $P\in\mathcal{S}_j$ if and only if $\vz=\tau(\eta\xi)$.
+By Lemma~\ref{lem:trace} this holds if and only if $[G^{-1}\vz]=\eta\xi$, that is, $\zeta=\eta\xi$.
+Since $\xi\neq 0$ is invertible in the field, $\eta=\zeta\oslash\xi$ exists and is unique.
+\end{proof}
+
+\paragraph{Relation to the Galois-ratio labelling.}
+In the field-theoretic labelling of the Pauli group used by Bandyopadhyay \emph{et al.}~\cite{Bandyopadhyay2002} and reviewed by Durt \emph{et al.}~\cite{Durt2010}, the basis of a Pauli operator is the ratio of its $X$- and $Z$-labels, both written as field elements.
+Theorem~\ref{thm:ratio} is this rule written for qubit Pauli strings in our circuit convention.
+The one extra step is the change of basis: our circuits produce $\vz$ in the trace-dual basis, while $\vx$ is in the polynomial basis, so $\vz$ must be read through the dual basis ($\zeta=\sum_t z_t\beta_t$) before the two are divided.
+The orientation of the ratio ($z$ over $x$) is also fixed by our convention.
+
+\section{Algorithm and complexity}
+
+\begin{algorithm}[h]
+\caption{\textsc{PtoJ-Ratio}: basis label of a Pauli string}
+\label{alg:ratio}
+\begin{algorithmic}[1]
+\Statex \textbf{Precompute once per $n$:} the trace table $T[m]=\Tr(\alpha^m)$ for $0\le m\le 2n-2$; the dual basis $\beta_t$ (columns of $G^{-1}$, with $G_{st}=T[s+t]$).
+\Statex \textbf{Input:} Pauli string $P=(\vx,\vz)$.
+\If{$\vx=0$} \Return $\infty$ \Comment{computational basis}
+\EndIf
+\State $\xi\gets\sum_t x_t\alpha^t$ \Comment{read $\vx$ in the polynomial basis}
+\State $\zeta\gets\sum_t z_t\,\beta_t$ \Comment{read $\vz$ in the dual basis}
+\State $\eta\gets\zeta\oslash\xi$ \Comment{extended Euclid for $\xi^{-1}$, then one multiplication}
+\State \Return $j=\sum_k \eta_k 2^k$ \Comment{bits of $\eta$ in the polynomial basis}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Cost per Pauli string.}
+\begin{itemize}
+  \item Forming $\zeta$: XOR of at most $n$ precomputed $n$-bit words, $\mathcal{O}(n^2)$ bit operations, $\mathcal{O}(n)$ word operations.
+  \item Field inverse $\xi^{-1}$: the extended Euclidean algorithm over $\F_2[x]$ takes $\mathcal{O}(n^2)$ bit operations~\cite[Ch.~3]{vonzurGathen2013}.
+  \item One field multiplication: a carry-less product, $\mathcal{O}(n^2)$, followed by reduction modulo $f$, which is $\mathcal{O}(n)$ when $f$ is a trinomial or pentanomial.
+\end{itemize}
+The total is $\mathcal{O}(n^2)$, compared with $\mathcal{O}(n^3)$ for Gaussian elimination on each Pauli string.
+
+\paragraph{Precomputation.}
+The trace table costs $\mathcal{O}(n^2)$, as in the circuit synthesis.
+$G^{-1}$ costs $\mathcal{O}(n^3)$ once by Gaussian elimination.
+\begin{remark}
+The dual basis of a polynomial basis also has a classical closed form: if $f(x)/(x-\alpha)=\sum_i b_i x^i$, then $\beta_i=b_i/f'(\alpha)$~\cite{lidl1997finite}.
+This gives the precomputation in $\mathcal{O}(n^2)$ field-coefficient operations, but the one-time $\mathcal{O}(n^3)$ is negligible in practice.
+\end{remark}
+
+\paragraph{Whole Hamiltonian.}
+For $H$ with $m$ Pauli terms, computing all weights $w_j$ costs $\mathcal{O}(n^3+mn^2)$, instead of $\mathcal{O}(mn^3)$.
+
+\section{Worked example: $n=3$}
+
+Take $f(x)=x^3+x+1$, the polynomial used in the code, so $\alpha^3=\alpha+1$.
+The traces are
+\[
+  \Tr(1)=1,\quad \Tr(\alpha)=0,\quad \Tr(\alpha^2)=0,\quad \Tr(\alpha^3)=1,\quad \Tr(\alpha^4)=0,
+\]
+and therefore
+\[
+  G=\begin{pmatrix}1&0&0\\0&0&1\\0&1&0\end{pmatrix}=G^{-1},
+  \qquad\text{dual basis: } \beta_0=1,\ \beta_1=\alpha^2,\ \beta_2=\alpha .
+\]
+Check: $\Tr(\alpha\cdot\alpha^2)=\Tr(\alpha^3)=1$ and $\Tr(\alpha\cdot\alpha)=\Tr(\alpha^2)=0$.
+
+\paragraph{The Pauli string $P=\texttt{XXY}$} ($X$ on wires 0 and 1, $Y$ on wire 2).
+\begin{align*}
+  \vx&=(1,1,1) &&\Rightarrow\quad \xi=1+\alpha+\alpha^2,\\
+  \vz&=(0,0,1) &&\Rightarrow\quad \zeta=\beta_2=\alpha,\\
+  \xi^{-1}&=\alpha^2 &&\text{since } (1+\alpha+\alpha^2)\alpha^2=\alpha^2+(\alpha+1)+(\alpha^2+\alpha)=1,\\
+  \eta&=\zeta\oslash\xi=\alpha\cdot\alpha^2=\alpha^3=1+\alpha &&\Rightarrow\quad j=1+2=3 .
+\end{align*}
+The existing Gaussian-elimination code also returns $j=3$.
+As a direct check, $\tau(\eta\xi)_s=\Tr(\alpha^s\cdot\alpha)$ gives $(\Tr\alpha,\Tr\alpha^2,\Tr\alpha^3)=(0,0,1)=\vz$.
+
+\section{Numerical verification}
+
+We compared Algorithm~\ref{alg:ratio} with the existing \texttt{p\_to\_j} (Gaussian elimination) using the irreducible polynomials of \texttt{src/consts.py}.
+For $n\le6$ we checked every non-identity Pauli string; for $7\le n\le 16$ we checked 300 random strings for each $n$.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{rrc}
+\toprule
+$n$ & Pauli strings checked & agreement with \texttt{p\_to\_j}\\
+\midrule
+2--6 & all $4^n-1$ (5451 in total) & 100\%\\
+7--16 & 300 random strings for each $n$ & 100\%\\
+\bottomrule
+\end{tabular}
+\caption{Agreement of Algorithm~\ref{alg:ratio} with the existing Gaussian-elimination implementation.}
+\label{tab:verify}
+\end{table}
+
+\paragraph{Speed.}
+At $n=16$, for 2000 random Pauli strings, the existing implementation took 4.6\,s and the ratio rule 0.46\,s (both in pure Python).
+This is a factor of 10, before using extended Euclid for the inverse; the test used Fermat inversion $\xi^{2^n-2}$.
+
+\section{Suggested use in the manuscript}
+
+\begin{itemize}
+  \item \textbf{Ingredient 1 (assigning Pauli terms to bases).}
+  The Related Work section notes that the Galois-ratio rule is known in field labels, but that converting qubit Pauli strings into field labels consistent with a given circuit is not made explicit.
+  Theorem~\ref{thm:ratio} is exactly that conversion: in our convention $\vx$ is in the polynomial basis, $\vz$ is in the trace-dual basis, and $j$ is their ratio.
+  This states the inversion as a short theorem with a two-line proof, rather than as an algorithm.
+  \item \textbf{Complexity.} Inversion costs $\mathcal{O}(n^2)$ per Pauli string after an $\mathcal{O}(n^3)$ (or $\mathcal{O}(n^2)$, by the Remark) precomputation.
+  This matches the $\mathcal{O}(n^2)$ of the circuit synthesis, so the full pipeline is $\mathcal{O}(n^2)$ per Pauli term and per circuit.
+  \item \textbf{Appendix.} The existing dual-basis appendix example can serve directly: the dual basis it constructs is the set of columns of $G^{-1}$.
+\end{itemize}
+
+\bibliographystyle{unsrt}
+\bibliography{p_to_j_ratio}
+
+\end{document}
